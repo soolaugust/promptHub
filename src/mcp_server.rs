@@ -280,7 +280,14 @@ fn search_layers_impl(params: SearchLayersParams) -> anyhow::Result<String> {
     );
 
     if results.is_empty() {
-        return Ok(format!(r#"{{"results":[],"message":"No layers found for '{}'}}"#, params.keyword));
+        // Use serde_json to build the empty response so the keyword is
+        // properly escaped and cannot inject arbitrary JSON characters.
+        let empty: Vec<serde_json::Value> = Vec::new();
+        let resp = serde_json::json!({
+            "results": empty,
+            "message": format!("No layers found for '{}'", params.keyword),
+        });
+        return Ok(serde_json::to_string_pretty(&resp)?);
     }
 
     #[derive(Serialize)]

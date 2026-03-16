@@ -35,3 +35,45 @@ pub enum PromptHubError {
 }
 
 pub type Result<T> = std::result::Result<T, PromptHubError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_layer_not_found_display() {
+        let e = PromptHubError::LayerNotFound("base/reviewer".to_string());
+        let msg = e.to_string();
+        assert!(msg.contains("base/reviewer"),
+            "LayerNotFound message should include the layer name, got: {}", msg);
+    }
+
+    #[test]
+    fn test_conflict_error_display() {
+        let e = PromptHubError::ConflictError(
+            "base/writer".to_string(),
+            "base/translator".to_string(),
+        );
+        let msg = e.to_string();
+        assert!(msg.contains("base/writer"),
+            "ConflictError message should include first layer, got: {}", msg);
+        assert!(msg.contains("base/translator"),
+            "ConflictError message should include second layer, got: {}", msg);
+    }
+
+    #[test]
+    fn test_parse_error_display() {
+        let e = PromptHubError::ParseError("unexpected token at line 3".to_string());
+        let msg = e.to_string();
+        assert!(msg.contains("unexpected token"),
+            "ParseError should include the detail string, got: {}", msg);
+    }
+
+    #[test]
+    fn test_validation_error_display() {
+        let e = PromptHubError::ValidationError("'name' field is required".to_string());
+        let msg = e.to_string();
+        assert!(msg.contains("name"),
+            "ValidationError should include the detail string, got: {}", msg);
+    }
+}

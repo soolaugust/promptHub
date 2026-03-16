@@ -351,4 +351,28 @@ models: []
         let results = super::search_layers(&[tmp.path().to_path_buf()], "reviewer");
         assert!(!results.is_empty(), "search should be case-insensitive");
     }
+
+    #[test]
+    fn test_search_layers_searches_multiple_dirs() {
+        // Results from all directories are aggregated into a single list.
+        let tmp1 = TempDir::new().unwrap();
+        let tmp2 = TempDir::new().unwrap();
+
+        create_test_layer(tmp1.path(), "reviewer", "base", "v1.0");
+        create_test_layer(tmp2.path(), "translator", "base", "v1.0");
+
+        let results = super::search_layers(
+            &[tmp1.path().to_path_buf(), tmp2.path().to_path_buf()],
+            "base",
+        );
+        assert_eq!(results.len(), 2,
+            "layers from both directories should be included in results");
+    }
+
+    #[test]
+    fn test_parse_semver_three_part_no_prefix() {
+        // Three-part versions without a leading 'v' should be parsed correctly.
+        assert_eq!(parse_semver("1.2.3"), Some(semver::Version::new(1, 2, 3)));
+        assert_eq!(parse_semver("0.1.0"), Some(semver::Version::new(0, 1, 0)));
+    }
 }
