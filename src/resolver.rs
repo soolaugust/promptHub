@@ -294,4 +294,61 @@ models: []
         assert!(resolver.resolve(&layer_ref).is_err(),
             "major version 'v1' must not match 'v10' or 'v11'");
     }
+
+    #[test]
+    fn test_parse_semver_handles_v_prefix() {
+        assert_eq!(parse_semver("v1.0.0"), Some(semver::Version::new(1, 0, 0)));
+        assert_eq!(parse_semver("v1.2.3"), Some(semver::Version::new(1, 2, 3)));
+    }
+
+    #[test]
+    fn test_parse_semver_handles_two_part_version() {
+        // "v1.9" should be treated as "1.9.0"
+        assert_eq!(parse_semver("v1.9"), Some(semver::Version::new(1, 9, 0)));
+        assert_eq!(parse_semver("1.10"), Some(semver::Version::new(1, 10, 0)));
+    }
+
+    #[test]
+    fn test_parse_semver_returns_none_for_invalid() {
+        assert_eq!(parse_semver("not-a-version"), None);
+        assert_eq!(parse_semver(""), None);
+    }
+
+    #[test]
+    fn test_search_layers_by_name() {
+        let tmp = TempDir::new().unwrap();
+
+        create_test_layer(tmp.path(), "reviewer", "base", "v1.0");
+        create_test_layer(tmp.path(), "translator", "base", "v1.0");
+
+        let results = super::search_layers(&[tmp.path().to_path_buf()], "reviewer");
+        assert_eq!(results.len(), 1, "should find exactly one matching layer");
+        assert!(results[0].0.contains("reviewer"), "result name should contain keyword");
+    }
+
+    #[test]
+    fn test_search_layers_no_match() {
+        let tmp = TempDir::new().unwrap();
+        create_test_layer(tmp.path(), "reviewer", "base", "v1.0");
+
+        let results = super::search_layers(&[tmp.path().to_path_buf()], "nonexistent-keyword");
+        assert!(results.is_empty(), "no results expected for unmatched keyword");
+    }
+
+    #[test]
+    fn test_search_layers_empty_dirs() {
+        // Searching in an empty dirs list should return an empty result.
+        let results = super::search_layers(&[], "anything");
+        assert!(results.is_empty(), "empty dir list should yield empty results");
+    }
+
+    #[test]
+    fn test_search_layers_case_insensitive() {
+        let tmp = TempDir::new().unwrap();
+        create_test_layer(tmp.path(), "Reviewer", "base", "v1.0");
+
+        // lowercase search should still find the layer
+        let results = super::search_layers(&[tmp.path().to_path_buf()], "reviewer");
+        assert!(!results.is_empty(), "search should be case-insensitive");
+    }
 }

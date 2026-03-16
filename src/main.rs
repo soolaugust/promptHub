@@ -86,11 +86,9 @@ fn cmd_build(
     let mut pf = parser::parse(&content).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     for var_str in var_overrides {
-        let parts: Vec<&str> = var_str.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            anyhow::bail!("Invalid --var format '{}'. Use NAME=VALUE", var_str);
-        }
-        pf.vars.insert(parts[0].to_string(), parts[1].to_string());
+        let (name, value) = parser::parse_var_override(var_str)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        pf.vars.insert(name, value);
     }
 
     let local_layers = base_dir.join("layers");

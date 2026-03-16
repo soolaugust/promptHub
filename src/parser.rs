@@ -78,6 +78,21 @@ pub fn parse(content: &str) -> crate::error::Result<Promptfile> {
     build_promptfile(instructions)
 }
 
+/// Parse a variable override string of the form `NAME=VALUE`.
+///
+/// Returns `(name, value)` on success, or a `ParseError` with a clear
+/// message if the string is not in the expected format.  Used by both
+/// the CLI (`--var`) and the MCP server `vars` parameter.
+pub fn parse_var_override(s: &str) -> crate::error::Result<(String, String)> {
+    let parts: Vec<&str> = s.splitn(2, '=').collect();
+    if parts.len() != 2 || parts[0].is_empty() {
+        return Err(crate::error::PromptHubError::ParseError(
+            format!("Invalid variable override '{}'. Expected NAME=VALUE format", s)
+        ));
+    }
+    Ok((parts[0].to_string(), parts[1].to_string()))
+}
+
 fn parse_instructions(content: &str) -> crate::error::Result<Vec<Instruction>> {
     let mut instructions = Vec::new();
 
@@ -363,5 +378,43 @@ LAYER guard/fact-check:v1.0
         let r = LayerRef::parse("base/code-reviewer:v1.0").unwrap();
         assert_eq!(r.source, "base/code-reviewer");
         assert_eq!(r.version, "v1.0");
+    }
+
+    #[test]
+    fn test_parse_var_override_basic() {
+        let (name, value) = parse_var_override("language=Spanish").unwrap();
+        assert_eq!(name, "language");
+        assert_eq!(value, "Spanish");
+    }
+
+    #[test]
+    fn test_parse_var_override_value_with_equals() {
+        // Value may contain '=' characters; only the first '=' splits name from value.
+        let (name, value) = parse_var_override("url=https://example.com?a=1&b=2").unwrap();
+        assert_eq!(name, "url");
+        assert_eq!(value, "https://example.com?a=1&b=2");
+    }
+
+    #[test]
+    fn test_parse_var_override_empty_value_allowed() {
+        // NAME= (empty value) is valid
+        let (name, value) = parse_var_override("flag=").unwrap();
+        assert_eq!(name, "flag");
+        assert_eq!(value, "");
+    }
+
+    #[test]
+    fn test_parse_var_override_missing_equals_fails() {
+        let result = parse_var_override("noequalssign");
+        assert!(result.is_err(), "missing '=' should be a parse error");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("NAME=VALUE") || msg.contains("="),
+            "error should mention expected format, got: {}", msg);
+    }
+
+    #[test]
+    fn test_parse_var_override_empty_name_fails() {
+        let result = parse_var_override("=value");
+        assert!(result.is_err(), "empty variable name should be a parse error");
     }
 }
