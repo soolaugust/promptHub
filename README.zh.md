@@ -71,15 +71,15 @@
 - **版本化、可审计** — `ph diff` 精确展示构建间的变化；`ph build -o json` 输出可复现的摘要。
 - **团队共享** — 推送到私有 registry，团队成员拉取经过测试的精确版本。
 
-**资源占用**（基于实际编译产物，实测数据）：
+**Prompt 资源占用对比**（以 4 个 skill、3 个共享 layer 为例，实测数据）：
 
-| | PromptHub | Python 方案 | Node 方案 |
-|---|---|---|---|
-| 二进制大小 | ~8 MB（`ph` + `ph-mcp`） | 50+ MB + 运行时 | 30+ MB + Node |
-| 运行时依赖 | **无** | Python 3.x + pip | Node.js + npm |
-| 安装方式 | `cargo install` 或直接复制二进制 | `pip install` | `npm install -g` |
-| 冷启动 | **< 5 ms** | 200–500 ms | 100–300 ms |
-| 空闲内存 | ~5 MB | ~30 MB | ~20 MB |
+| | 复制粘贴（无 PromptHub） | 使用 PromptHub |
+|---|---|---|
+| 代码库存储 | ~12 KB（4 份完整 prompt 各自独立） | ~1.7 KB Promptfiles + 共享 layers 一份 |
+| 发给 LLM 的 token 数 | ~600–850 tokens / skill | 相同（`ph build` 展开后内容一致） |
+| 修复共享 layer 的 bug | 需逐个修改 N 个文件 | **改 1 个文件，所有 skill 自动生效** |
+| 版本锁定 | 靠注释或 git blame | `FROM base/office-doc:v1.0` 精确锁定 |
+| 团队同步 | 手动同步复制 | `ph pull`，拉取经过测试的精确版本 |
 
 ## 安装
 
@@ -373,6 +373,18 @@ curl -X POST https://registry.mycompany.internal/v1/auth/token \
 ### Registry 工作流演示
 
 ![PromptHub registry demo](docs/demo-registry.gif)
+
+### Web UI
+
+`ph-registry` 内置 Web 界面，Registry 启动后直接用浏览器访问 `http://localhost:8080`：
+
+![PromptHub Registry Dashboard](docs/demo-ui.png)
+
+| Layer 浏览 | Layer 详情 |
+|---|---|
+| ![Layers](docs/demo-ui-layers.png) | ![Detail](docs/demo-ui-detail.png) |
+
+浏览所有 layers、查看 prompt 内容及版本历史，无需安装任何额外工具。
 
 ### 完整工作流示例
 

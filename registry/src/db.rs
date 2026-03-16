@@ -197,6 +197,24 @@ impl Db {
         let rows = stmt.query_map(params![namespace, name], |row| row.get(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<String>>>()?)
     }
+
+    pub fn get_stats(&self) -> Result<RegistryStats> {
+        let conn = self.conn.lock().unwrap();
+        let total_layers: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT namespace || '/' || name) FROM layer_meta", [], |r| r.get(0))?;
+        let total_versions: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM layer_meta", [], |r| r.get(0))?;
+        let namespaces: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT namespace) FROM layer_meta", [], |r| r.get(0))?;
+        Ok(RegistryStats { total_layers, total_versions, namespaces })
+    }
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct RegistryStats {
+    pub total_layers: i64,
+    pub total_versions: i64,
+    pub namespaces: i64,
 }
 
 #[derive(Debug, serde::Serialize)]

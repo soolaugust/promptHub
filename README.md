@@ -71,15 +71,15 @@ Layers merge deterministically: **same section name → later layer overrides**,
 - **Versioned and auditable** — `ph diff` shows exactly what changed between builds; `ph build -o json` emits a reproducible digest.
 - **Team-shareable** — push layers to a private registry; teammates pull the exact version you tested.
 
-**Footprint** (actual release binaries, measured):
+**Prompt footprint** (4 skills sharing 3 common layers, measured):
 
-| | PromptHub | Python-based | Node-based |
-|---|---|---|---|
-| Binary size | ~8 MB (`ph` + `ph-mcp`) | 50+ MB + runtime | 30+ MB + Node |
-| Runtime deps | **None** | Python 3.x + pip | Node.js + npm |
-| Install | `cargo install` or copy binary | `pip install` | `npm install -g` |
-| Cold start | **< 5 ms** | 200–500 ms | 100–300 ms |
-| Memory (idle) | ~5 MB | ~30 MB | ~20 MB |
+| | Copy-paste (no PromptHub) | With PromptHub |
+|---|---|---|
+| Repo storage | ~12 KB (4 full prompts, each a separate file) | ~1.7 KB Promptfiles + shared layers stored once |
+| Tokens sent to LLM | ~600–850 tokens / skill | Identical (`ph build` expands to the same content) |
+| Fix a bug in a shared layer | Edit N files manually | **Edit 1 file — all skills pick it up** |
+| Version pinning | Comments or git blame | `FROM base/office-doc:v1.0` in the Promptfile |
+| Team sync | Copy files manually | `ph pull` — exact tested version, every time |
 
 ## Installation
 
@@ -373,6 +373,18 @@ curl -X POST https://registry.mycompany.internal/v1/auth/token \
 ### Registry workflow demo
 
 ![PromptHub registry demo](docs/demo-registry.gif)
+
+### Web UI
+
+`ph-registry` ships with a built-in web interface. Once the registry is running, open `http://localhost:8080` in your browser:
+
+![PromptHub Registry Dashboard](docs/demo-ui.png)
+
+| Layers browser | Layer detail |
+|---|---|
+| ![Layers](docs/demo-ui-layers.png) | ![Detail](docs/demo-ui-detail.png) |
+
+Browse layers, inspect prompt content, and view version history — no extra tooling required.
 
 ### Full workflow example
 

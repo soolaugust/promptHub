@@ -33,6 +33,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
+        .route("/", get(ph_registry::routes::ui_routes::serve_ui))
+        .route("/ui", get(ph_registry::routes::ui_routes::serve_ui))
+        .route("/api/stats", get(ph_registry::routes::ui_routes::get_stats))
         .route("/v1/auth/login", post(ph_registry::routes::auth_routes::login))
         .route("/v1/auth/token", post(ph_registry::routes::auth_routes::issue_token))
         .route("/layers/:namespace/:name/versions",
