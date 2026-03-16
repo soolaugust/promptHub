@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod storage;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
