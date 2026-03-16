@@ -1,5 +1,5 @@
 # rust:1.80 includes the full toolchain needed by rusqlite bundled (gcc, etc.)
-FROM rust:1.80 as builder
+FROM rust:1.85 as builder
 WORKDIR /build
 COPY . .
 RUN cargo build --release -p ph-registry
