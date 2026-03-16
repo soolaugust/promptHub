@@ -2,7 +2,14 @@ use crate::error::{PromptHubError, Result};
 use crate::merger::MergedPrompt;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::OnceLock;
 use regex::Regex;
+
+static VAR_REGEX: OnceLock<Regex> = OnceLock::new();
+
+fn var_regex() -> &'static Regex {
+    VAR_REGEX.get_or_init(|| Regex::new(r"\$\{([^}]+)\}").expect("invalid regex"))
+}
 
 /// Render variables in merged prompt content
 pub fn render_variables(
@@ -35,7 +42,7 @@ pub fn render_variables(
 
 /// Substitute ${var_name} in text with values from vars map
 pub fn substitute_vars(text: &str, vars: &HashMap<String, String>) -> Result<String> {
-    let re = Regex::new(r"\$\{([^}]+)\}").unwrap();
+    let re = var_regex();
     let mut warnings = Vec::new();
     let result = re.replace_all(text, |caps: &regex::Captures| {
         let var_name = &caps[1];

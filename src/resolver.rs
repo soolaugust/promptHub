@@ -5,6 +5,30 @@ use crate::config::{global_layers_dir};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Parse a directory name as semver, stripping a leading 'v' if present.
+/// Handles two-part versions like "v1.9" by treating them as "1.9.0".
+fn parse_semver(dir_name: &str) -> Option<semver::Version> {
+    let s = dir_name.strip_prefix('v').unwrap_or(dir_name);
+    // Try exact parse first (e.g. "1.9.0")
+    if let Ok(v) = semver::Version::parse(s) {
+        return Some(v);
+    }
+    // Try appending ".0" for two-part versions like "1.9" -> "1.9.0"
+    let padded = format!("{}.0", s);
+    semver::Version::parse(&padded).ok()
+}
+
+/// Compare two version directory paths using semver ordering; fall back to
+/// lexicographic ordering when the names are not valid semver.
+fn cmp_version_dirs(a: &Path, b: &Path) -> std::cmp::Ordering {
+    let name_a = a.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let name_b = b.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    match (parse_semver(name_a), parse_semver(name_b)) {
+        (Some(va), Some(vb)) => va.cmp(&vb),
+        _ => name_a.cmp(name_b),
+    }
+}
+
 /// Resolve a LayerRef to an actual Layer by searching local paths
 pub struct LayerResolver {
     /// Extra search paths (e.g. project-local layers/)
@@ -75,8 +99,8 @@ impl LayerResolver {
             return Ok(None);
         }
 
-        // Sort versions for deterministic latest selection
-        versions.sort();
+        // Sort versions using semver ordering so v1.10 > v1.9
+        versions.sort_by(|a, b| cmp_version_dirs(a, b));
 
         match version {
             "latest" | "" => {

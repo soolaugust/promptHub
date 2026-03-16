@@ -62,5 +62,5 @@ fn fetch_url(url: &str) -> Result<String> {
         ));
     }
 
-    response.text().map_err(|e| PromptHubError::Network(e))
+    response.text().map_err(PromptHubError::Network)
 }

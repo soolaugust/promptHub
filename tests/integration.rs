@@ -221,3 +221,28 @@ fn test_conflict_detection() {
     let err_str = err.to_string();
     assert!(err_str.contains("conflict") || err_str.contains("Conflict"), "Got: {}", err_str);
 }
+
+// ── Test 6: Semver version sorting (v1.9 vs v1.10) ────────────────────────────
+
+#[test]
+fn test_resolve_semver_latest_ordering() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    // Create v1.9 and v1.10 — lexicographic order would pick v1.9 as "latest"
+    create_layer(&layers_dir, "base", "semver-test", "v1.9", &[
+        ("role", "Version 1.9"),
+    ], &[]);
+    create_layer(&layers_dir, "base", "semver-test", "v1.10", &[
+        ("role", "Version 1.10"),
+    ], &[]);
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let layer_ref = prompthub::parser::LayerRef {
+        source: "base/semver-test".to_string(),
+        version: "latest".to_string(),
+    };
+    let layer = resolver.resolve(&layer_ref).unwrap();
+    assert_eq!(layer.meta.version, "v1.10",
+        "Semver sort must pick v1.10 as latest, not v1.9");
+}

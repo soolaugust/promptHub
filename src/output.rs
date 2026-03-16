@@ -2,17 +2,12 @@ use crate::error::{PromptHubError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, Default, clap::ValueEnum)]
 pub enum OutputFormat {
+    #[default]
     Text,
     Json,
     Clipboard,
-}
-
-impl Default for OutputFormat {
-    fn default() -> Self {
-        OutputFormat::Text
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -73,8 +73,8 @@ fn parse_instructions(content: &str) -> crate::error::Result<Vec<Instruction>> {
         if line.is_empty() {
             continue;
         }
-        if line.starts_with('#') {
-            instructions.push(Instruction::Comment(line[1..].trim().to_string()));
+        if let Some(stripped) = line.strip_prefix('#') {
+            instructions.push(Instruction::Comment(stripped.trim().to_string()));
             continue;
         }
 
@@ -121,7 +121,10 @@ fn parse_instructions(content: &str) -> crate::error::Result<Vec<Instruction>> {
             }
             _ => {
                 return Err(crate::error::PromptHubError::ParseError(
-                    format!("Line {}: Unknown directive '{}'", line_num + 1, directive)
+                    format!(
+                        "Line {}: Unknown directive '{}'. Valid directives: FROM, LAYER, PARAM, VAR, TASK, INCLUDE",
+                        line_num + 1, directive
+                    )
                 ));
             }
         }
