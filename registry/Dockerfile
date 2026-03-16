@@ -5,9 +5,11 @@ COPY . .
 RUN cargo build --release -p ph-registry
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/ph-registry /usr/local/bin/ph-registry
 COPY registry/registry.demo.yaml /etc/prompthub/registry.yaml
-RUN mkdir -p /data
+COPY registry/entrypoint.sh /entrypoint.sh
+COPY prompthub/layers /layers
+RUN chmod +x /entrypoint.sh && mkdir -p /data
 EXPOSE 8080
-ENTRYPOINT ["ph-registry", "/etc/prompthub/registry.yaml"]
+ENTRYPOINT ["/entrypoint.sh"]
