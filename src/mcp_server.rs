@@ -10,7 +10,7 @@
 //!   { "command": "ph-mcp" }
 
 use anyhow::Context as _;
-use prompthub::{config, layer, merger, parser, renderer, resolver};
+use prompthub::{config, merger, parser, renderer, resolver};
 use rmcp::{
     handler::server::{
         tool::ToolRouter,
@@ -276,21 +276,10 @@ fn list_layers_impl(params: ListLayersParams) -> anyhow::Result<String> {
 }
 
 fn search_layers_impl(params: SearchLayersParams) -> anyhow::Result<String> {
-    let kw = params.keyword.to_lowercase();
-    let mut results = Vec::new();
-
-    for base in [PathBuf::from("layers"), config::global_layers_dir()] {
-        for (name, path) in resolver::scan_layers(&base) {
-            if let Ok(l) = layer::Layer::load_from_dir(&path) {
-                let matches = name.to_lowercase().contains(&kw)
-                    || l.meta.description.to_lowercase().contains(&kw)
-                    || l.meta.tags.iter().any(|t| t.to_lowercase().contains(&kw));
-                if matches {
-                    results.push((name, l));
-                }
-            }
-        }
-    }
+    let results = resolver::search_layers(
+        &[PathBuf::from("layers"), config::global_layers_dir()],
+        &params.keyword,
+    );
 
     if results.is_empty() {
         return Ok(format!(r#"{{"results":[],"message":"No layers found for '{}'}}"#, params.keyword));

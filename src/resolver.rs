@@ -167,6 +167,35 @@ pub fn scan_layers(base_dir: &Path) -> Vec<(String, PathBuf)> {
     results
 }
 
+/// Search for layers matching a keyword across multiple base directories.
+///
+/// Each directory is scanned via `scan_layers`; layers whose name, description,
+/// or any tag contains `keyword` (case-insensitive) are returned as a list of
+/// `(display_name, Layer)` pairs.  Errors loading individual layers are silently
+/// skipped so that one corrupted layer doesn't abort the entire search.
+pub fn search_layers(
+    dirs: &[PathBuf],
+    keyword: &str,
+) -> Vec<(String, crate::layer::Layer)> {
+    let kw = keyword.to_lowercase();
+    let mut results = Vec::new();
+
+    for base in dirs {
+        for (name, path) in scan_layers(base) {
+            if let Ok(l) = crate::layer::Layer::load_from_dir(&path) {
+                let matches = name.to_lowercase().contains(&kw)
+                    || l.meta.description.to_lowercase().contains(&kw)
+                    || l.meta.tags.iter().any(|t| t.to_lowercase().contains(&kw));
+                if matches {
+                    results.push((name, l));
+                }
+            }
+        }
+    }
+
+    results
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -310,21 +310,10 @@ fn cmd_pull(layer_str: &str) -> anyhow::Result<()> {
 // ── search ────────────────────────────────────────────────────────────────────
 
 fn cmd_search(keyword: &str) -> anyhow::Result<()> {
-    let kw = keyword.to_lowercase();
-    let mut results: Vec<(String, layer::Layer)> = Vec::new();
-
-    for base in [PathBuf::from("layers"), config::global_layers_dir()] {
-        for (name, path) in resolver::scan_layers(&base) {
-            if let Ok(l) = layer::Layer::load_from_dir(&path) {
-                let matches = name.to_lowercase().contains(&kw)
-                    || l.meta.description.to_lowercase().contains(&kw)
-                    || l.meta.tags.iter().any(|t| t.to_lowercase().contains(&kw));
-                if matches {
-                    results.push((name, l));
-                }
-            }
-        }
-    }
+    let results = resolver::search_layers(
+        &[PathBuf::from("layers"), config::global_layers_dir()],
+        keyword,
+    );
 
     if results.is_empty() {
         println!("No layers found for '{}'", keyword);

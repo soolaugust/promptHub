@@ -24,6 +24,13 @@ impl LayerRef {
                 format!("Empty layer reference: {}", input)
             ));
         }
+        // Reject sources containing path-traversal components to prevent
+        // directory traversal when the source is used to build a filesystem path.
+        if source.split('/').any(|component| component == ".." || component == ".") {
+            return Err(crate::error::PromptHubError::ParseError(
+                format!("Layer reference '{}' contains invalid path components ('.' or '..')", source)
+            ));
+        }
         Ok(LayerRef { source, version })
     }
 
@@ -33,6 +40,12 @@ impl LayerRef {
         } else {
             format!("{}:{}", self.source, self.version)
         }
+    }
+}
+
+impl std::fmt::Display for LayerRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display())
     }
 }
 
@@ -313,5 +326,42 @@ LAYER guard/fact-check:v1.0
         let msg = err.to_string();
         assert!(msg.contains("TASK") || msg.contains("task"),
             "error should mention TASK directive, got: {}", msg);
+    }
+
+    #[test]
+    fn test_layer_ref_display_impl() {
+        let r = LayerRef { source: "base/code-reviewer".to_string(), version: "v1.0".to_string() };
+        assert_eq!(format!("{}", r), "base/code-reviewer:v1.0",
+            "Display should include version when not 'latest'");
+
+        let r_latest = LayerRef { source: "base/writer".to_string(), version: "latest".to_string() };
+        assert_eq!(format!("{}", r_latest), "base/writer",
+            "Display should omit version when it is 'latest'");
+    }
+
+    #[test]
+    fn test_layer_ref_parse_rejects_path_traversal() {
+        // Layer references that contain ".." should be rejected.
+        let result = LayerRef::parse("../evil:v1.0");
+        assert!(result.is_err(),
+            "layer ref with '..' should be rejected to prevent path traversal");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("invalid") || msg.contains(".."),
+            "error should mention invalid path, got: {}", msg);
+    }
+
+    #[test]
+    fn test_layer_ref_parse_rejects_dot_component() {
+        let result = LayerRef::parse("./base/writer:v1.0");
+        assert!(result.is_err(),
+            "layer ref starting with '.' component should be rejected");
+    }
+
+    #[test]
+    fn test_layer_ref_parse_allows_normal_namespaced_ref() {
+        // Normal namespace/name references should still work fine.
+        let r = LayerRef::parse("base/code-reviewer:v1.0").unwrap();
+        assert_eq!(r.source, "base/code-reviewer");
+        assert_eq!(r.version, "v1.0");
     }
 }
