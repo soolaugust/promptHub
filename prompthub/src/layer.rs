@@ -159,6 +159,54 @@ fn parse_section_header(line: &str) -> Option<String> {
     None
 }
 
+/// Validate layer.yaml content and prompt.md content received as raw bytes.
+/// Returns the parsed LayerMeta on success, or a descriptive error string on failure.
+///
+/// Stricter than `load_from_dir`:
+/// - Requires non-empty `namespace` (registry prevents naming collisions)
+/// - All sections declared in `layer.yaml` must appear in `prompt.md`
+/// - `prompt.md` must be non-empty
+pub fn validate_bytes(layer_yaml: &[u8], prompt_md: &[u8]) -> Result<LayerMeta, String> {
+    // Parse YAML
+    let meta: LayerMeta = serde_yaml::from_slice(layer_yaml)
+        .map_err(|e| format!("invalid layer.yaml: {}", e))?;
+
+    // Required fields
+    if meta.name.is_empty() {
+        return Err("layer.yaml: 'name' field is empty".to_string());
+    }
+    if meta.version.is_empty() {
+        return Err("layer.yaml: 'version' field is empty".to_string());
+    }
+    // namespace is required for registry (stricter than load_from_dir)
+    if meta.namespace.is_empty() {
+        return Err("layer.yaml: 'namespace' field is empty (required by registry)".to_string());
+    }
+
+    // prompt.md must not be empty
+    if prompt_md.is_empty() {
+        return Err("prompt.md is empty".to_string());
+    }
+
+    // All declared sections must appear in prompt.md
+    if !meta.sections.is_empty() {
+        let md_str = std::str::from_utf8(prompt_md)
+            .map_err(|_| "prompt.md is not valid UTF-8".to_string())?;
+        let (parsed_sections, _) = parse_sections(md_str);
+        for declared in &meta.sections {
+            // Lowercase to match parse_section_header's normalization
+            if !parsed_sections.contains_key(declared.to_lowercase().as_str()) {
+                return Err(format!(
+                    "section '{}' declared in layer.yaml but not found in prompt.md",
+                    declared
+                ));
+            }
+        }
+    }
+
+    Ok(meta)
+}
+
 /// Reassemble sections back to markdown, maintaining a stable section order
 pub fn sections_to_content(sections: &HashMap<String, String>, order: &[String]) -> String {
     let mut result = String::new();
@@ -365,5 +413,69 @@ Use markdown."#;
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("version") || msg.contains("required"),
             "error should mention 'version' or 'required', got: {}", msg);
+    }
+}
+
+#[cfg(test)]
+mod validate_bytes_tests {
+    use super::*;
+
+    fn valid_yaml() -> Vec<u8> {
+        b"name: reviewer\nversion: v1.0\nnamespace: base\ndescription: test\ntags: []\nsections: [role]\n".to_vec()
+    }
+
+    fn valid_md() -> Vec<u8> {
+        b"[role]\nYou are an expert reviewer.\n".to_vec()
+    }
+
+    #[test]
+    fn test_validate_bytes_valid() {
+        let result = validate_bytes(&valid_yaml(), &valid_md());
+        assert!(result.is_ok());
+        let meta = result.unwrap();
+        assert_eq!(meta.name, "reviewer");
+        assert_eq!(meta.namespace, "base");
+    }
+
+    #[test]
+    fn test_validate_bytes_empty_namespace() {
+        let yaml = b"name: reviewer\nversion: v1.0\nnamespace: \nsections: []\n".to_vec();
+        let result = validate_bytes(&yaml, &valid_md());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("namespace"));
+    }
+
+    #[test]
+    fn test_validate_bytes_empty_name() {
+        let yaml = b"name: \nversion: v1.0\nnamespace: base\nsections: []\n".to_vec();
+        let result = validate_bytes(&yaml, &valid_md());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("name"));
+    }
+
+    #[test]
+    fn test_validate_bytes_invalid_yaml() {
+        // Unclosed flow sequence — libyaml definitively rejects this as a parse error
+        let yaml = b"name: [\n";
+        let md = b"[role]\ncontent\n";
+        let result = validate_bytes(yaml, md);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_bytes_missing_section() {
+        // declares [role] but prompt.md has [output-format]
+        let yaml = b"name: r\nversion: v1.0\nnamespace: base\nsections: [role]\n".to_vec();
+        let md = b"[output-format]\nsome content\n".to_vec();
+        let result = validate_bytes(&yaml, &md);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("role"));
+    }
+
+    #[test]
+    fn test_validate_bytes_empty_prompt_md() {
+        let result = validate_bytes(&valid_yaml(), b"");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("prompt.md"));
     }
 }
