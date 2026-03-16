@@ -304,4 +304,32 @@ mod tests {
         assert!(text.contains("You are helpful."), "role section missing from output");
         assert!(text.contains("Bonus content."), "undeclared 'extra' section should be in output");
     }
+
+    #[test]
+    fn test_to_text_skips_empty_sections() {
+        // Sections with empty content should not appear in the rendered text.
+        let base = make_layer("test", "base", vec![
+            ("role", "Non-empty content."),
+            ("constraints", ""),  // empty — should be skipped
+        ], vec![]);
+
+        let result = merge_layers(&base, &[], HashMap::new()).unwrap();
+        let text = result.to_text();
+
+        assert!(text.contains("Non-empty content."), "non-empty section should appear");
+        // The empty "constraints" section must not contribute any text (not even a blank line)
+        assert!(!text.contains("constraints"), "empty section content should be skipped");
+    }
+
+    #[test]
+    fn test_to_text_all_empty_sections_returns_empty_string() {
+        let base = make_layer("test", "base", vec![
+            ("role", ""),
+            ("constraints", ""),
+        ], vec![]);
+
+        let result = merge_layers(&base, &[], HashMap::new()).unwrap();
+        let text = result.to_text();
+        assert!(text.is_empty(), "all-empty sections should produce empty output");
+    }
 }

@@ -3,6 +3,27 @@ use crate::config::{Config, global_layers_dir};
 use crate::parser::LayerRef;
 use std::path::PathBuf;
 
+/// Resolve the effective version string to use when pulling a layer.
+///
+/// When the caller requests "latest" (or provides an empty string), we
+/// currently fall back to "v1.0" because there is no remote index to
+/// query for the actual latest version.
+///
+/// TODO: implement index-based latest-version discovery once the remote
+/// registry provides an index endpoint.
+pub(crate) fn resolve_pull_version(version: &str) -> String {
+    if version == "latest" || version.is_empty() {
+        "v1.0".to_string()
+    } else {
+        version.to_string()
+    }
+}
+
+/// Build the base URL for downloading a specific layer version.
+pub(crate) fn layer_url_base(base_url: &str, source: &str, version: &str) -> String {
+    format!("{}/layers/{}/{}", base_url.trim_end_matches('/'), source, version)
+}
+
 /// Pull a layer from a remote source
 pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
     let source = config.default_source().ok_or_else(|| {
@@ -10,18 +31,13 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
     })?;
 
     let base_url = source.url.trim_end_matches('/');
-    let version = if layer_ref.version == "latest" || layer_ref.version.is_empty() {
-        // Try to find latest from index or just use "v1.0" as default
-        "v1.0".to_string()
-    } else {
-        layer_ref.version.clone()
-    };
+    let version = resolve_pull_version(&layer_ref.version);
 
-    let layer_url_base = format!("{}/layers/{}/{}", base_url, layer_ref.source, version);
+    let url_base = layer_url_base(base_url, &layer_ref.source, &version);
 
     // Download layer.yaml
-    let yaml_url = format!("{}/layer.yaml", layer_url_base);
-    let prompt_url = format!("{}/prompt.md", layer_url_base);
+    let yaml_url = format!("{}/layer.yaml", url_base);
+    let prompt_url = format!("{}/prompt.md", url_base);
 
     eprintln!("Pulling {} from {}...", layer_ref.display(), source.name);
 
@@ -59,6 +75,44 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
 
 /// Default HTTP request timeout (30 seconds).
 const FETCH_TIMEOUT_SECS: u64 = 30;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_pull_version_latest_becomes_v1_0() {
+        assert_eq!(resolve_pull_version("latest"), "v1.0",
+            "'latest' should fall back to v1.0 until index discovery is implemented");
+    }
+
+    #[test]
+    fn test_resolve_pull_version_empty_becomes_v1_0() {
+        assert_eq!(resolve_pull_version(""), "v1.0",
+            "empty version should fall back to v1.0");
+    }
+
+    #[test]
+    fn test_resolve_pull_version_explicit_preserved() {
+        assert_eq!(resolve_pull_version("v2.3"), "v2.3",
+            "explicit version should be returned as-is");
+        assert_eq!(resolve_pull_version("v1.0"), "v1.0",
+            "v1.0 should be returned as-is");
+    }
+
+    #[test]
+    fn test_layer_url_base_construction() {
+        let url = layer_url_base("https://example.com/registry", "base/reviewer", "v1.0");
+        assert_eq!(url, "https://example.com/registry/layers/base/reviewer/v1.0");
+    }
+
+    #[test]
+    fn test_layer_url_base_strips_trailing_slash() {
+        let url = layer_url_base("https://example.com/registry/", "base/writer", "v2.0");
+        assert_eq!(url, "https://example.com/registry/layers/base/writer/v2.0",
+            "trailing slash in base URL should be stripped");
+    }
+}
 
 fn fetch_url(url: &str) -> Result<String> {
     let client = reqwest::blocking::Client::builder()
