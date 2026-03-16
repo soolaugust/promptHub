@@ -4,6 +4,8 @@ A layered prompt management system inspired by Docker. Compose reusable prompt l
 
 [中文文档](README.zh.md)
 
+![PromptHub demo](docs/demo.gif)
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Promptfile                                 │

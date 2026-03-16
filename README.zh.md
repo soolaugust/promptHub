@@ -4,6 +4,8 @@
 
 [English](README.md)
 
+![PromptHub demo](docs/demo.gif)
+
 ```
 ┌─────────────────────────────────────────────┐
 │  Promptfile                                 │
