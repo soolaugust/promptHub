@@ -7,6 +7,7 @@ pub enum OutputFormat {
     #[default]
     Text,
     Json,
+    #[cfg(feature = "clipboard")]
     Clipboard,
 }
 
@@ -39,6 +40,7 @@ pub fn output_result(
             let output = build_output(text, params, layers, warnings);
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
+        #[cfg(feature = "clipboard")]
         OutputFormat::Clipboard => {
             copy_to_clipboard(text)?;
             eprintln!("✓ Prompt copied to clipboard ({} chars)", text.len());
@@ -82,6 +84,7 @@ pub(crate) fn compute_digest(text: &str, layers: &[String]) -> String {
     hex::encode(&result[..8])
 }
 
+#[cfg(feature = "clipboard")]
 fn copy_to_clipboard(text: &str) -> Result<()> {
     use arboard::Clipboard;
     let mut clipboard = Clipboard::new().map_err(|e| {

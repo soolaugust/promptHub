@@ -38,17 +38,22 @@ rpassword = "7"
 walkdir = "2"
 sha2 = "0.10"
 hex = "0.4"
-arboard = "3"
+arboard = { version = "3", optional = true }
 chrono = { version = "0.4", features = ["serde"] }
-# MCP server dependencies
-rmcp = { version = "1.2", features = ["server", "transport-io", "schemars"] }
+# MCP server dependencies (optional, only needed for ph-mcp binary)
+rmcp = { version = "1.2", features = ["server", "transport-io", "schemars"], optional = true }
 tokio = { version = "1", features = ["full"] }
-schemars = { version = "1", features = ["derive"] }
+schemars = { version = "1", features = ["derive"], optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[features]
+default = ["clipboard", "mcp"]
+clipboard = ["arboard"]
+mcp = ["rmcp", "schemars"]
 
 [lints.rust]
 unused_imports = "warn"
