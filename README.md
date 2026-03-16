@@ -9,7 +9,7 @@ A layered prompt management system inspired by Docker. Compose reusable prompt l
 [![CI](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml/badge.svg)](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/prompthub.svg)](https://crates.io/crates/prompthub)
 [![crates.io downloads](https://img.shields.io/crates/d/prompthub.svg)](https://crates.io/crates/prompthub)
-[![Demo](https://img.shields.io/badge/demo-online-brightgreen)](https://prompthub-demo.onrender.com)
+[![Demo](https://img.shields.io/badge/demo-online-brightgreen)](https://prompthub-demo.up.railway.app)
 
 ![PromptHub demo](docs/demo.gif)
 
@@ -87,12 +87,12 @@ Layers merge deterministically: **same section name → later layer overrides**,
 
 ## Try It Online
 
-[Open Registry UI →](https://prompthub-demo.onrender.com)
+[Open Registry UI →](https://prompthub-demo.up.railway.app)
 
 Or pull a layer directly (no account required):
 
 ```bash
-ph pull base/code-reviewer:v1.0 --source https://prompthub-demo.onrender.com
+ph pull base/code-reviewer:v1.0 --source https://prompthub-demo.up.railway.app
 ```
 
 > **Note:** The demo runs on Render's free tier and may take ~30 seconds to wake up after inactivity.
