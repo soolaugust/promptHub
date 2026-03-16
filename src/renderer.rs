@@ -62,13 +62,38 @@ pub fn substitute_vars(text: &str, vars: &HashMap<String, String>) -> Result<(St
     Ok((result, undef))
 }
 
-/// Load INCLUDE file content
+/// Load INCLUDE file content.
+///
+/// For relative paths the file is resolved against `base_dir`.  To prevent
+/// path-traversal attacks (e.g. `INCLUDE ../../../../etc/passwd`), the
+/// resolved path is canonicalized and verified to reside within `base_dir`.
+/// Absolute INCLUDE paths are allowed as an intentional opt-out.
 pub fn load_include(path: &std::path::Path, base_dir: &Path) -> Result<String> {
     let full_path = if path.is_absolute() {
         path.to_path_buf()
     } else {
         base_dir.join(path)
     };
+
+    // Path-traversal check: only for relative include paths.
+    // We canonicalize both to resolve `..` components and symlinks, then verify
+    // the target is contained within base_dir.  If canonicalization fails (e.g.
+    // the file doesn't exist yet) we skip the check and let the read below
+    // produce the natural "file not found" error.
+    if !path.is_absolute() {
+        if let (Ok(canon_base), Ok(canon_target)) = (
+            base_dir.canonicalize(),
+            full_path.canonicalize(),
+        ) {
+            if !canon_target.starts_with(&canon_base) {
+                return Err(PromptHubError::Other(format!(
+                    "INCLUDE path '{}' resolves outside the Promptfile directory; \
+                     use an absolute path if you intentionally need to include files from outside",
+                    path.display(),
+                )));
+            }
+        }
+    }
 
     std::fs::read_to_string(&full_path).map_err(|e| {
         PromptHubError::Other(format!("Cannot read include file '{}': {}", full_path.display(), e))
@@ -154,6 +179,49 @@ mod tests {
         assert!(text.contains("Review this code."),
             "task text should be appended");
         assert!(undef.is_empty(), "no undefined vars expected");
+    }
+
+    #[test]
+    fn test_load_include_path_traversal_rejected() {
+        use tempfile::TempDir;
+        use std::path::PathBuf;
+
+        // Create a directory tree: parent/ with secret.txt, and parent/subdir/ as the base_dir.
+        // Then INCLUDE ../secret.txt from subdir/ would traverse upward to parent/.
+        let parent_tmp = TempDir::new().unwrap();
+        let subdir = parent_tmp.path().join("subdir");
+        std::fs::create_dir_all(&subdir).unwrap();
+
+        let secret_file = parent_tmp.path().join("secret.txt");
+        std::fs::write(&secret_file, "secret content").unwrap();
+
+        // Try to include via path traversal (relative, goes up one level)
+        let traversal_path = PathBuf::from("../secret.txt");
+        let result = load_include(&traversal_path, &subdir);
+
+        // The file exists at parent/secret.txt but base_dir is parent/subdir.
+        // The traversal should be rejected.
+        assert!(result.is_err(),
+            "Path traversal via '../secret.txt' should be rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("resolves outside") || err_msg.contains("outside"),
+            "Error should mention path traversal, got: {}", err_msg);
+    }
+
+    #[test]
+    fn test_load_include_normal_path_accepted() {
+        use tempfile::TempDir;
+        use std::path::PathBuf;
+
+        let tmp = TempDir::new().unwrap();
+        let include_file = tmp.path().join("context.md");
+        std::fs::write(&include_file, "Valid include content.").unwrap();
+
+        let path = PathBuf::from("context.md");
+        let result = load_include(&path, tmp.path());
+
+        assert!(result.is_ok(), "Normal relative path should be accepted");
+        assert_eq!(result.unwrap(), "Valid include content.");
     }
 
     #[test]
