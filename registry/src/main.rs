@@ -1,22 +1,6 @@
-mod auth;
-mod config;
-mod db;
-mod error;
-mod routes;
-mod storage;
-
-use std::sync::Arc;
+use ph_registry::{AppState, config::RegistryConfig, db::Db, storage::{FilesystemStorage, StorageBackend}};
 use axum::{Router, routing::{get, post, put}};
-use config::RegistryConfig;
-use db::Db;
-use storage::{FilesystemStorage, StorageBackend};
-
-#[derive(Clone)]
-pub struct AppState {
-    pub config: Arc<RegistryConfig>,
-    pub db: Db,
-    pub storage: Arc<StorageBackend>,
-}
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,12 +16,12 @@ async fn main() -> anyhow::Result<()> {
     let db = Db::open(&config.database.path)?;
 
     let storage: Arc<StorageBackend> = match &config.storage {
-        config::StorageConfig::Filesystem { path } => {
+        ph_registry::config::StorageConfig::Filesystem { path } => {
             std::fs::create_dir_all(path)?;
             Arc::new(StorageBackend::Filesystem(FilesystemStorage::new(path)))
         }
-        config::StorageConfig::S3 { .. } => {
-            anyhow::bail!("S3 storage not yet implemented; use type: filesystem");
+        ph_registry::config::StorageConfig::S3 { .. } => {
+            anyhow::bail!("S3 storage backend not yet implemented; use type: filesystem");
         }
     };
 
@@ -49,14 +33,15 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = Router::new()
-        .route("/v1/auth/login", post(routes::auth_routes::login))
-        .route("/v1/auth/token", post(routes::auth_routes::issue_token))
-        .route("/layers/:namespace/:name/versions", get(routes::layer_routes::get_versions))
-        .route("/layers", get(routes::layer_routes::list_layers))
+        .route("/v1/auth/login", post(ph_registry::routes::auth_routes::login))
+        .route("/v1/auth/token", post(ph_registry::routes::auth_routes::issue_token))
+        .route("/layers/:namespace/:name/versions",
+               get(ph_registry::routes::layer_routes::get_versions))
+        .route("/layers", get(ph_registry::routes::layer_routes::list_layers))
         .route("/layers/:namespace/:name/:version/:filename",
-               get(routes::layer_routes::get_layer_file))
+               get(ph_registry::routes::layer_routes::get_layer_file))
         .route("/layers/:namespace/:name/:version",
-               put(routes::layer_routes::put_layer))
+               put(ph_registry::routes::layer_routes::put_layer))
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);

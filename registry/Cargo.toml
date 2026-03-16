@@ -5,6 +5,10 @@ edition = "2021"
 description = "Self-hosted PromptHub layer registry"
 license = "MIT"
 
+[lib]
+name = "ph_registry"
+path = "src/lib.rs"
+
 [[bin]]
 name = "ph-registry"
 path = "src/main.rs"
