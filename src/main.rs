@@ -6,6 +6,7 @@ use clap::Parser;
 use cli::{Cli, Commands, LayerCommands};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
+use semver::Version;
 
 fn main() {
     let cli = Cli::parse();
@@ -237,6 +238,9 @@ fn cmd_layer_validate(name: &str) -> anyhow::Result<()> {
     if l.meta.name.is_empty() {
         errors.push("name is required".to_string());
     }
+    if l.meta.namespace.is_empty() {
+        warnings.push("namespace is empty (layers should have a namespace for proper resolution)".to_string());
+    }
     if l.meta.version.is_empty() {
         errors.push("version is required".to_string());
     }
@@ -375,7 +379,19 @@ fn cmd_history(layer_name: &str) -> anyhow::Result<()> {
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
         .filter_map(|e| e.file_name().into_string().ok())
         .collect();
-    versions.sort();
+    // Use semver-aware sort so v1.10 appears after v1.9
+    versions.sort_by(|a, b| {
+        let parse_ver = |s: &str| -> Option<Version> {
+            let s = s.strip_prefix('v').unwrap_or(s);
+            Version::parse(s)
+                .or_else(|_| Version::parse(&format!("{}.0", s)))
+                .ok()
+        };
+        match (parse_ver(a), parse_ver(b)) {
+            (Some(va), Some(vb)) => va.cmp(&vb),
+            _ => a.cmp(b),
+        }
+    });
 
     println!("{}", format!("Versions of '{}':", layer_name).bold());
     for v in &versions {
@@ -397,6 +413,10 @@ fn parse_layer_name(name: &str) -> (String, String) {
 
 fn find_layer(name: &str) -> anyhow::Result<layer::Layer> {
     let layer_ref = parser::LayerRef::parse(name).map_err(|e| anyhow::anyhow!("{}", e))?;
-    let resolver = resolver::LayerResolver::new(vec![PathBuf::from("layers")]);
+    // Search both project-local and global layers directory
+    let resolver = resolver::LayerResolver::new(vec![
+        PathBuf::from("layers"),
+        config::global_layers_dir(),
+    ]);
     resolver.resolve(&layer_ref).map_err(|e| anyhow::anyhow!("{}", e))
 }

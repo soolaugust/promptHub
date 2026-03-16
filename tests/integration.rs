@@ -246,3 +246,32 @@ fn test_resolve_semver_latest_ordering() {
     assert_eq!(layer.meta.version, "v1.10",
         "Semver sort must pick v1.10 as latest, not v1.9");
 }
+
+// ── Test 7: Section-override warning is generated ──────────────────────────────
+
+#[test]
+fn test_section_override_warning_generated() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    create_layer(&layers_dir, "base", "writer", "v1.0", &[
+        ("role", "You are a writer."),
+        ("constraints", "Original constraint."),
+    ], &[]);
+    create_layer(&layers_dir, "style", "override-style", "v1.0", &[
+        ("constraints", "Overriding constraint."),
+    ], &[]);
+
+    let pf_content = "FROM base/writer:v1.0\nLAYER style/override-style:v1.0\n";
+    let pf = prompthub::parser::parse(pf_content).unwrap();
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base = resolver.resolve(&pf.from).unwrap();
+    let extra = resolver.resolve(&pf.layers[0]).unwrap();
+    let merged = prompthub::merger::merge_layers(&base, &[extra], HashMap::new()).unwrap();
+
+    assert!(!merged.warnings.is_empty(),
+        "Overriding a section should generate a warning");
+    assert!(merged.warnings[0].contains("constraints"),
+        "Warning should mention the overridden section name");
+}
