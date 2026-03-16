@@ -64,6 +64,23 @@
 
 层合并规则确定：**同名 section → 后层覆盖前层**，**新 section → 追加**。变量（`${language}`）在构建时完成替换。
 
+## 为什么选择 PromptHub
+
+**对比手写 prompt 的三个优势：**
+- **复用而非复制粘贴** — 一个层，多个 Promptfile。修复一处 bug，所有构建自动生效。
+- **版本化、可审计** — `ph diff` 精确展示构建间的变化；`ph build -o json` 输出可复现的摘要。
+- **团队共享** — 推送到私有 registry，团队成员拉取经过测试的精确版本。
+
+**资源占用**（基于实际编译产物，实测数据）：
+
+| | PromptHub | Python 方案 | Node 方案 |
+|---|---|---|---|
+| 二进制大小 | ~8 MB（`ph` + `ph-mcp`） | 50+ MB + 运行时 | 30+ MB + Node |
+| 运行时依赖 | **无** | Python 3.x + pip | Node.js + npm |
+| 安装方式 | `cargo install` 或直接复制二进制 | `pip install` | `npm install -g` |
+| 冷启动 | **< 5 ms** | 200–500 ms | 100–300 ms |
+| 空闲内存 | ~5 MB | ~30 MB | ~20 MB |
+
 ## 安装
 
 ```bash
@@ -83,14 +100,17 @@ cargo install --path registry/
 ## 快速开始
 
 ```bash
-# 从官方仓库拉取层
+# 1. 从官方仓库拉取层
 ph pull base/code-reviewer:v1.0
+
+# 2. 创建 Promptfile
+ph init
+
+# 3. 构建并使用 prompt
+ph build
 ```
 
 ```
-$ ph init
-✓ Created Promptfile
-
 $ ph build
 [role]
 你是一位资深代码审查专家，具备 10 年以上工程经验。
@@ -100,7 +120,7 @@ $ ph build
 - 提供具体的修复建议
 ...
 
-$ ph build --var language=English -o json
+$ ph build -o json
 {
   "prompt": "[role]\nYou are a senior code reviewer...",
   "params": { "model": "claude-sonnet-4-6", "temperature": "0.3" },
@@ -109,16 +129,7 @@ $ ph build --var language=English -o json
 }
 ```
 
-```bash
-# 列出本地所有层
-ph layer list
-
-# 验证层格式
-ph layer validate base/code-reviewer
-
-# 对比两个 Promptfile 的构建输出
-ph diff Promptfile Promptfile.prod
-```
+直接将 `ph build -o json` 的输出接入 CI 流水线或 API 调用 — 无需复制粘贴，不会产生版本漂移。
 
 ## Promptfile 语法
 
@@ -203,42 +214,48 @@ models: [claude-*, gpt-4*]                      # 兼容模型（glob 匹配）
 - **同名 section** → 后层覆盖前层（同时发出 warning）
 - **新 section** → 追加到合并结果
 
-## Layer 管理
+## 官方种子层
+
+| Layer | 说明 |
+|-------|------|
+| `base/code-reviewer` | 专业代码审查专家 |
+| `base/translator` | 多语言翻译，注重文化适配 |
+| `base/writer` | 清晰、有感染力的写作助手 |
+| `base/analyst` | 严谨的数据分析专家 |
+| `style/concise` | 简洁直接，控制在 300 词以内 |
+| `style/verbose` | 详细解释，逐步推导 |
+| `style/academic` | 学术写作风格 |
+| `lang/chinese-markdown` | 简体中文 + Markdown 格式输出 |
+| `lang/english-academic` | 英文学术格式 |
+| `lang/structured-output` | 机器可解析的结构化输出 |
+| `guard/no-secrets` | 禁止输出敏感信息和密钥 |
+| `guard/safe-output` | 通用安全约束 |
+| `guard/fact-check` | 强制事实准确性，标记不确定断言 |
+
+## CLI 参考
 
 ```bash
-# 创建新 Layer 模板
-ph layer new base/my-role
+# Layer 管理
+ph layer new base/my-role          # 创建新 Layer 模板
+ph layer list                      # 列出所有本地 Layer
+ph layer inspect base/code-reviewer  # 查看元数据和内容
+ph layer validate base/code-reviewer # 验证 Layer 格式
 
-# 列出本地所有 Layer
-ph layer list
-# 输出：
-# LAYER                     PATH
-# ─────────────────────────────────────────────────────────────
-# base/code-reviewer        ~/.prompthub/layers/base/code-reviewer/v1.0
-# style/concise             ~/.prompthub/layers/style/concise/v1.0
-# guard/no-secrets (local)  layers/guard/no-secrets/v1.0
-# 3 layer(s) found
+# 拉取和推送
+ph pull base/code-reviewer:v1.0    # 从 registry 拉取（缓存至 ~/.prompthub/layers/）
+ph push base/my-expert:v1.0        # 推送到 registry
 
-# 查看 Layer 详情和内容
-ph layer inspect base/code-reviewer
+# 构建与对比
+ph build                           # 构建并输出到标准输出
+ph build -o json                   # 结构化输出（prompt + 参数 + 摘要）
+ph build --var language=English    # 覆盖变量
+ph diff Promptfile Promptfile.prod # 对比两个 Promptfile
 
-# 验证 Layer 格式
-ph layer validate base/code-reviewer
-# ✓ Layer 'base/code-reviewer' is valid
+# 其他
+ph search translation              # 按关键词搜索层
+ph history base/code-reviewer      # 查看本地缓存版本历史
+ph login --token <tok> <url>       # 认证到 registry
 ```
-
-## 拉取 Layer
-
-```bash
-# 从官方仓库拉取
-ph pull base/code-reviewer:v1.0
-# Pulling base/code-reviewer:v1.0 from official...
-# ✓ Pulled base/code-reviewer:v1.0 to ~/.prompthub/layers/base/code-reviewer/v1.0
-
-ph pull style/concise
-```
-
-拉取的 Layer 缓存在 `~/.prompthub/layers/`。
 
 在 `~/.prompthub/config.yaml` 中配置自定义源：
 
@@ -248,7 +265,9 @@ sources:
     url: https://raw.githubusercontent.com/prompthub/layers/main
     default: true
   - name: my-team
-    url: https://github.com/my-org/prompt-layers
+    url: https://registry.mycompany.internal
+    auth:
+      token: phrt_xxxxxxxxxxxx
 ```
 
 ## 私有 Registry
@@ -318,35 +337,18 @@ docker compose up
 ```bash
 # 非交互模式（CI 流水线 / AI Agent）——直接使用管理员签发的 token
 ph login --token phrt_xxxxxxxxxxxx https://registry.mycompany.internal
-# ✓ Logged in to registry.mycompany.internal (added as source 'registry.mycompany.internal')
-#   Note: set 'default: true' in ~/.prompthub/config.yaml to use it by default.
+# ✓ Logged in to registry.mycompany.internal
 
-# 交互模式——输入用户名和密码（调用 POST /v1/auth/login）
+# 交互模式——输入用户名和密码
 ph login https://registry.mycompany.internal
-# Username: alice
-# Password: ********
-# ✓ Logged in to my-company
 
 # 清除 token
 ph logout https://registry.mycompany.internal
-# ✓ Logged out from my-company
-```
-
-token 存储在 `~/.prompthub/config.yaml`（文件权限 `0600`，防止其他用户读取）：
-
-```yaml
-sources:
-  - name: my-company
-    url: https://registry.mycompany.internal
-    default: true
-    auth:
-      token: phrt_xxxxxxxxxxxx
 ```
 
 ### 推送层
 
 ```bash
-# 本地须存在 layers/base/my-expert/v1.0/ 目录
 ph push base/my-expert:v1.0
 # ✓ Pushed base/my-expert:v1.0 to my-company
 
@@ -354,8 +356,6 @@ ph push base/my-expert:v1.0
 ph push --source my-company base/my-expert:v1.0
 
 # 版本不可变——推送已存在的版本会被拒绝
-ph push base/my-expert:v1.0
-# ✗ Version v1.0 already exists on my-company (versions are immutable)
 ```
 
 `ph push` 在发送前会先在本地验证层的合法性，格式有误直接报错，不会浪费网络请求。
@@ -363,13 +363,16 @@ ph push base/my-expert:v1.0
 ### 签发 token（管理员）
 
 ```bash
-# 签发长期 CI token（需要 registry.yaml 中的 admin_token）
 curl -X POST https://registry.mycompany.internal/v1/auth/token \
   -H "Authorization: Bearer phrt_bootstrap_changeme" \
   -H "Content-Type: application/json" \
   -d '{"name": "ci-pipeline", "expires_in_days": 365}'
 # {"token": "phrt_abc123...", "name": "ci-pipeline", "expires_at": "2027-03-16T..."}
 ```
+
+### Registry 工作流演示
+
+![PromptHub registry demo](docs/demo-registry.gif)
 
 ### 完整工作流示例
 
@@ -401,38 +404,6 @@ cat Promptfile
 ph build
 ```
 
-## 项目目录结构
-
-```
-my-project/
-  Promptfile              # 构建描述文件
-  layers/                 # 项目私有层（不发布）
-    custom-role/
-      layer.yaml
-      prompt.md
-  context.md              # 可选：通过 INCLUDE 引入
-```
-
-全局缓存：`~/.prompthub/layers/`
-
-## 官方种子层
-
-| Layer | 说明 |
-|-------|------|
-| `base/code-reviewer` | 专业代码审查专家 |
-| `base/translator` | 多语言翻译，注重文化适配 |
-| `base/writer` | 清晰、有感染力的写作助手 |
-| `base/analyst` | 严谨的数据分析专家 |
-| `style/concise` | 简洁直接，控制在 300 词以内 |
-| `style/verbose` | 详细解释，逐步推导 |
-| `style/academic` | 学术写作风格 |
-| `lang/chinese-markdown` | 简体中文 + Markdown 格式输出 |
-| `lang/english-academic` | 英文学术格式 |
-| `lang/structured-output` | 机器可解析的结构化输出 |
-| `guard/no-secrets` | 禁止输出敏感信息和密钥 |
-| `guard/safe-output` | 通用安全约束 |
-| `guard/fact-check` | 强制事实准确性，标记不确定断言 |
-
 ## MCP 服务器
 
 `ph-mcp` 是一个 MCP（Model Context Protocol）服务器，让 Claude、Cursor 等 AI 助手可以直接调用 PromptHub，无需手动复制粘贴。
@@ -456,8 +427,6 @@ my-project/
            ▼
   ~/.prompthub/layers/  +  ./layers/  (项目本地)
 ```
-
-### 配置
 
 **Claude Desktop** — 添加到 `~/Library/Application Support/Claude/claude_desktop_config.json`：
 
@@ -483,8 +452,6 @@ my-project/
 }
 ```
 
-### 可用工具
-
 | 工具 | 说明 |
 |------|------|
 | `build_prompt` | 从 Promptfile 路径或内联内容构建 prompt，支持 `--var` 覆盖 |
@@ -492,42 +459,18 @@ my-project/
 | `search_layers` | 按关键词搜索层（匹配名称、描述、标签） |
 | `inspect_layer` | 查看指定层的完整元数据和 prompt 内容 |
 
-### 示例：Claude 调用 PromptHub
+## 配合使用
 
-配置完成后，Claude 可以直接调用这些工具：
-
-```
-用户：帮我用中文生成一个代码审查 prompt。
-
-Claude：[调用 build_prompt，传入]
-  content: |
-    FROM base/code-reviewer:v1.0
-    LAYER style/concise:v1.0
-    VAR language "中文"
-    TASK "审查这个 Pull Request。"
-  vars: ["language=中文"]
-
-结果：[role] 你是一位资深代码审查专家... [constraints] 保持简洁...
-      ---
-      用中文审查这个 Pull Request。
-```
-
-## 其他命令
-
-```bash
-# 对比两个 Promptfile 的构建输出差异
-ph diff Promptfile Promptfile.prod
-
-# 查看 Layer 本地版本历史
-ph history base/code-reviewer
-
-# 搜索可用 Layer
-ph search translation
-```
+| 工具 | 使用方式 |
+|------|---------|
+| [Claude Code](https://github.com/anthropics/claude-code) | 将 `ph-mcp` 作为 MCP 服务器；将技能系统提示定义为 Promptfile |
+| [Cursor](https://cursor.com) | 将 `ph-mcp` 作为 MCP 服务器 |
+| 任何 CI/CD 流水线 | `ph build -o json` 输出结构化 prompt + 模型参数 |
+| 私有团队 Registry | `ph push` / `ph pull` 版本化共享层 |
 
 ## 真实场景验证
 
-我们用 PromptHub 重构了 [anthropics/skills](https://github.com/anthropics/skills) 中的四个 skill，验证分层方案的实际效果。重构过程发现了三块真实的共享内容：
+我们用 PromptHub 重构了 [anthropics/skills](https://github.com/anthropics/skills) 中的四个 skill，发现了三块真实共享内容：
 
 | 共享层 | 原本重复分布于 | 层的内容 |
 |--------|--------------|---------|
@@ -536,44 +479,6 @@ ph search translation
 | `anti-slop` | `frontend-design`、`pptx` | 反通用 AI 审美设计约束 |
 
 原本分散在三个 skill 文件里的内容，现在统一维护在一个层里。修改 `office-toolkit/prompt.md` 一处，所有引用它的 skill 下次构建时自动生效。
-
-### frontend-design 重构
-
-**Promptfile：**
-```
-FROM base/frontend-builder:v1.0
-LAYER anti-slop:v1.0
-TASK "Build the frontend interface described above."
-```
-
-**执行结果：** 生成了 PromptHub 官网 landing page。`anti-slop` 层的约束产生了具体选择：JetBrains Mono + Fraunces 字体组合、近黑色背景配单一橙色强调色、非对称双栏 hero 布局、代码语法高亮作为主视觉元素。
-
-### pptx 重构
-
-**Promptfile：**
-```
-FROM base/office-doc:v1.0
-LAYER office-toolkit:v1.0
-LAYER office-quality:v1.0
-LAYER anti-slop:v1.0
-TASK "Create or edit the PowerPoint presentation as described."
-```
-
-**执行结果：** 用 pptxgenjs 生成了 3 页 PromptHub 技术介绍幻灯片。`anti-slop` 层约束产生了 Midnight Executive 配色方案（深海军蓝主导，橙色强调）。`office-toolkit` 层正确指导工具选型：从零创建时使用 pptxgenjs。
-
-### xlsx 重构
-
-**Promptfile：**
-```
-FROM base/office-doc:v1.0
-LAYER office-toolkit:v1.0
-LAYER office-quality:v1.0
-TASK "Create or edit the spreadsheet as described."
-```
-
-**执行结果：** 生成了 Layer 使用统计工作簿。`office-quality` 层的约束被精确执行：硬编码输入值用蓝色（`INPUT_BLUE = "0000FF"`），公式结果用黑色，所有汇总写成 `=SUM(F5:F17)` 而非 Python 计算后硬编码。
-
-### 重构揭示的边界
 
 并非所有 skill 都适合用 PromptHub 管理。`mcp-builder` 的四阶段工作流（研究 → 实现 → 测试 → 评估）是紧密耦合的整体——强行拆层会破坏流程逻辑。**PromptHub 在存在真实共享内容时才有价值，不是通用包装器。**
 

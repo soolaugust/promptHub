@@ -64,6 +64,23 @@ A layered prompt management system inspired by Docker. Compose reusable prompt l
 
 Layers merge deterministically: **same section name → later layer overrides**, **new section name → appended**. Variables (`${language}`) are substituted at build time.
 
+## Why PromptHub
+
+**vs. hand-written prompts:**
+- **Reuse without copy-paste** — one layer, many Promptfiles. Fix a bug once, all builds pick it up.
+- **Versioned and auditable** — `ph diff` shows exactly what changed between builds; `ph build -o json` emits a reproducible digest.
+- **Team-shareable** — push layers to a private registry; teammates pull the exact version you tested.
+
+**Footprint** (actual release binaries, measured):
+
+| | PromptHub | Python-based | Node-based |
+|---|---|---|---|
+| Binary size | ~8 MB (`ph` + `ph-mcp`) | 50+ MB + runtime | 30+ MB + Node |
+| Runtime deps | **None** | Python 3.x + pip | Node.js + npm |
+| Install | `cargo install` or copy binary | `pip install` | `npm install -g` |
+| Cold start | **< 5 ms** | 200–500 ms | 100–300 ms |
+| Memory (idle) | ~5 MB | ~30 MB | ~20 MB |
+
 ## Installation
 
 ```bash
@@ -83,14 +100,17 @@ cargo install --path registry/
 ## Quick Start
 
 ```bash
-# Pull a layer from the official registry
+# 1. Pull a layer from the official registry
 ph pull base/code-reviewer:v1.0
+
+# 2. Create a Promptfile
+ph init
+
+# 3. Build and use the prompt
+ph build
 ```
 
 ```
-$ ph init
-✓ Created Promptfile
-
 $ ph build
 [role]
 You are a senior code reviewer with 10+ years of experience.
@@ -100,7 +120,7 @@ You are a senior code reviewer with 10+ years of experience.
 - Provide specific fix suggestions
 ...
 
-$ ph build --var language=English -o json
+$ ph build -o json
 {
   "prompt": "[role]\nYou are a senior code reviewer...",
   "params": { "model": "claude-sonnet-4-6", "temperature": "0.3" },
@@ -109,16 +129,7 @@ $ ph build --var language=English -o json
 }
 ```
 
-```bash
-# List locally available layers
-ph layer list
-
-# Validate a layer's format
-ph layer validate base/code-reviewer
-
-# Compare build output of two Promptfiles
-ph diff Promptfile Promptfile.prod
-```
+Pipe `ph build -o json` directly into your CI pipeline or API call — no copy-paste, no drift.
 
 ## Promptfile Syntax
 
@@ -203,42 +214,48 @@ Overall assessment.
 - **Same section name** → later layer overrides earlier (with a warning)
 - **New section name** → appended to the merged prompt
 
-## Layer Management
+## Official Layers
+
+| Layer | Description |
+|-------|-------------|
+| `base/code-reviewer` | Professional code review expert |
+| `base/translator` | Multi-language translator with cultural adaptation |
+| `base/writer` | Clear and engaging professional writer |
+| `base/analyst` | Rigorous data analyst |
+| `style/concise` | Short, direct responses |
+| `style/verbose` | Thorough, step-by-step explanations |
+| `style/academic` | Formal academic writing style |
+| `lang/chinese-markdown` | Simplified Chinese + Markdown output |
+| `lang/english-academic` | Formal English academic format |
+| `lang/structured-output` | Machine-parseable structured output |
+| `guard/no-secrets` | Prevent exposure of sensitive information |
+| `guard/safe-output` | General safety constraints |
+| `guard/fact-check` | Enforce factual accuracy and uncertainty acknowledgment |
+
+## CLI Reference
 
 ```bash
-# Create a new layer template
-ph layer new base/my-role
+# Layer management
+ph layer new base/my-role          # Create a new layer template
+ph layer list                      # List all locally available layers
+ph layer inspect base/code-reviewer  # Show metadata and content
+ph layer validate base/code-reviewer # Validate layer format
 
-# List all locally available layers
-ph layer list
-# Output:
-# LAYER                     PATH
-# ─────────────────────────────────────────────────────────────
-# base/code-reviewer        ~/.prompthub/layers/base/code-reviewer/v1.0
-# style/concise             ~/.prompthub/layers/style/concise/v1.0
-# guard/no-secrets (local)  layers/guard/no-secrets/v1.0
-# 3 layer(s) found
+# Fetching layers
+ph pull base/code-reviewer:v1.0    # Pull from registry (cached in ~/.prompthub/layers/)
+ph push base/my-expert:v1.0        # Push to registry
 
-# Inspect a layer's metadata and content
-ph layer inspect base/code-reviewer
+# Build & compare
+ph build                           # Build to stdout
+ph build -o json                   # Structured output (prompt + params + digest)
+ph build --var language=English    # Override a variable
+ph diff Promptfile Promptfile.prod # Compare two Promptfiles
 
-# Validate a layer's format
-ph layer validate base/code-reviewer
-# ✓ Layer 'base/code-reviewer' is valid
+# Other
+ph search translation              # Search layers by keyword
+ph history base/code-reviewer      # Show locally cached versions
+ph login --token <tok> <url>       # Authenticate to a registry
 ```
-
-## Fetching Layers
-
-```bash
-# Pull from the official registry
-ph pull base/code-reviewer:v1.0
-# Pulling base/code-reviewer:v1.0 from official...
-# ✓ Pulled base/code-reviewer:v1.0 to ~/.prompthub/layers/base/code-reviewer/v1.0
-
-ph pull style/concise
-```
-
-By default, layers are fetched from the official registry and cached in `~/.prompthub/layers/`.
 
 Configure additional sources in `~/.prompthub/config.yaml`:
 
@@ -248,7 +265,9 @@ sources:
     url: https://raw.githubusercontent.com/prompthub/layers/main
     default: true
   - name: my-team
-    url: https://github.com/my-org/prompt-layers
+    url: https://registry.mycompany.internal
+    auth:
+      token: phrt_xxxxxxxxxxxx
 ```
 
 ## Private Registry
@@ -318,35 +337,18 @@ See [`registry/docker-compose.yaml`](registry/docker-compose.yaml) for the full 
 ```bash
 # Non-interactive (CI / AI agents) — use an admin-issued token directly
 ph login --token phrt_xxxxxxxxxxxx https://registry.mycompany.internal
-# ✓ Logged in to registry.mycompany.internal (added as source 'registry.mycompany.internal')
-#   Note: set 'default: true' in ~/.prompthub/config.yaml to use it by default.
+# ✓ Logged in to registry.mycompany.internal
 
-# Interactive — prompts for username + password (calls POST /v1/auth/login)
+# Interactive — prompts for username + password
 ph login https://registry.mycompany.internal
-# Username: alice
-# Password: ********
-# ✓ Logged in to my-company
 
 # Remove token
 ph logout https://registry.mycompany.internal
-# ✓ Logged out from my-company
-```
-
-The token is stored in `~/.prompthub/config.yaml` (written with `0600` permissions):
-
-```yaml
-sources:
-  - name: my-company
-    url: https://registry.mycompany.internal
-    default: true
-    auth:
-      token: phrt_xxxxxxxxxxxx
 ```
 
 ### Push a layer
 
 ```bash
-# The layer must exist locally at layers/base/my-expert/v1.0/
 ph push base/my-expert:v1.0
 # ✓ Pushed base/my-expert:v1.0 to my-company
 
@@ -354,8 +356,6 @@ ph push base/my-expert:v1.0
 ph push --source my-company base/my-expert:v1.0
 
 # Version immutability — pushing the same version twice is rejected
-ph push base/my-expert:v1.0
-# ✗ Version v1.0 already exists on my-company (versions are immutable)
 ```
 
 `ph push` validates the layer locally before sending it, so bad layers are rejected before any network round-trip.
@@ -363,13 +363,16 @@ ph push base/my-expert:v1.0
 ### Issue tokens (admin)
 
 ```bash
-# Create a long-lived CI token (requires admin_token from registry.yaml)
 curl -X POST https://registry.mycompany.internal/v1/auth/token \
   -H "Authorization: Bearer phrt_bootstrap_changeme" \
   -H "Content-Type: application/json" \
   -d '{"name": "ci-pipeline", "expires_in_days": 365}'
 # {"token": "phrt_abc123...", "name": "ci-pipeline", "expires_at": "2027-03-16T..."}
 ```
+
+### Registry workflow demo
+
+![PromptHub registry demo](docs/demo-registry.gif)
 
 ### Full workflow example
 
@@ -401,38 +404,6 @@ cat Promptfile
 ph build
 ```
 
-## Project Layout
-
-```
-my-project/
-  Promptfile              # Build description
-  layers/                 # Project-private layers (not published)
-    custom-role/
-      layer.yaml
-      prompt.md
-  context.md              # Optional: included via INCLUDE
-```
-
-Global cache: `~/.prompthub/layers/`
-
-## Official Layers
-
-| Layer | Description |
-|-------|-------------|
-| `base/code-reviewer` | Professional code review expert |
-| `base/translator` | Multi-language translator with cultural adaptation |
-| `base/writer` | Clear and engaging professional writer |
-| `base/analyst` | Rigorous data analyst |
-| `style/concise` | Short, direct responses |
-| `style/verbose` | Thorough, step-by-step explanations |
-| `style/academic` | Formal academic writing style |
-| `lang/chinese-markdown` | Simplified Chinese + Markdown output |
-| `lang/english-academic` | Formal English academic format |
-| `lang/structured-output` | Machine-parseable structured output |
-| `guard/no-secrets` | Prevent exposure of sensitive information |
-| `guard/safe-output` | General safety constraints |
-| `guard/fact-check` | Enforce factual accuracy and uncertainty acknowledgment |
-
 ## MCP Server
 
 `ph-mcp` is an MCP (Model Context Protocol) server that lets AI assistants like Claude and Cursor use PromptHub directly — no copy-paste required.
@@ -456,8 +427,6 @@ Global cache: `~/.prompthub/layers/`
            ▼
   ~/.prompthub/layers/  +  ./layers/  (project-local)
 ```
-
-### Setup
 
 **Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -483,34 +452,12 @@ Global cache: `~/.prompthub/layers/`
 }
 ```
 
-### Available Tools
-
 | Tool | Description |
 |------|-------------|
 | `build_prompt` | Build a prompt from a Promptfile path or inline content, with optional `--var` overrides |
 | `list_layers` | List all locally available layers (project + global cache) |
 | `search_layers` | Search layers by keyword across name, description, and tags |
 | `inspect_layer` | Show full metadata and prompt content for a specific layer |
-
-### Example: Claude using PromptHub
-
-Once configured, Claude can call these tools directly:
-
-```
-User: Build me a Chinese code review prompt for this PR.
-
-Claude: [calls build_prompt with]
-  content: |
-    FROM base/code-reviewer:v1.0
-    LAYER style/concise:v1.0
-    VAR language "中文"
-    TASK "Review the attached pull request."
-  vars: ["language=中文"]
-
-Result: [role] 你是一位资深代码审查专家... [constraints] 保持简洁...
-        ---
-        用中文审查这个 Pull Request。
-```
 
 ## Works Well With
 
@@ -521,22 +468,9 @@ Result: [role] 你是一位资深代码审查专家... [constraints] 保持简�
 | Any CI/CD pipeline | `ph build -o json` outputs structured prompt + model params |
 | Private team registries | `ph push` / `ph pull` for versioned, shared layers |
 
-## Other Commands
-
-```bash
-# Compare build output of two Promptfiles
-ph diff Promptfile Promptfile.prod
-
-# Show locally cached versions of a layer
-ph history base/code-reviewer
-
-# Search layers by keyword
-ph search translation
-```
-
 ## Real-World Validation
 
-We rebuilt four skills from [anthropics/skills](https://github.com/anthropics/skills) using PromptHub to validate the layering approach. The exercise found three genuinely shared content blocks across the original skills:
+We rebuilt four skills from [anthropics/skills](https://github.com/anthropics/skills) using PromptHub. Three genuine shared content blocks emerged:
 
 | Shared Layer | Duplicated Across | What It Contains |
 |---|---|---|
@@ -546,45 +480,7 @@ We rebuilt four skills from [anthropics/skills](https://github.com/anthropics/sk
 
 The same content that lived in 3 separate skill files now lives in one layer. A single edit to `office-toolkit/prompt.md` propagates to all three Office skills on the next build.
 
-### frontend-design
-
-**Promptfile:**
-```
-FROM base/frontend-builder:v1.0
-LAYER anti-slop:v1.0
-TASK "Build the frontend interface described above."
-```
-
-**Built and executed:** Generated a PromptHub landing page. The `anti-slop` layer's constraints produced concrete choices: JetBrains Mono + Fraunces typefaces, near-black background with a single orange accent, asymmetric two-column hero layout, code syntax as the primary visual element.
-
-### pptx
-
-**Promptfile:**
-```
-FROM base/office-doc:v1.0
-LAYER office-toolkit:v1.0
-LAYER office-quality:v1.0
-LAYER anti-slop:v1.0
-TASK "Create or edit the PowerPoint presentation as described."
-```
-
-**Built and executed:** Generated a 3-slide PromptHub technical deck using pptxgenjs. The `anti-slop` layer produced a Midnight Executive palette (navy dominant, orange accent). The `office-toolkit` layer correctly guided tool selection to pptxgenjs for creation from scratch.
-
-### xlsx
-
-**Promptfile:**
-```
-FROM base/office-doc:v1.0
-LAYER office-toolkit:v1.0
-LAYER office-quality:v1.0
-TASK "Create or edit the spreadsheet as described."
-```
-
-**Built and executed:** Generated a layer usage statistics workbook. The `office-quality` layer's constraints were applied precisely: hardcoded input values in blue (`INPUT_BLUE = "0000FF"`), formula results in black, all totals written as `=SUM(F5:F17)` rather than Python-computed values.
-
-### What the rebuild revealed
-
-Not all skills benefit from PromptHub. The `mcp-builder` skill's four-phase workflow (Research → Implement → Test → Evaluate) is a tightly coupled whole — splitting it into layers would break the logical flow. **PromptHub adds value where genuine shared content exists, not as a universal wrapper.**
+Not all skills benefit. The `mcp-builder` skill's four-phase workflow (Research → Implement → Test → Evaluate) is a tightly coupled whole — splitting it into layers would break the logical flow. **PromptHub adds value where genuine shared content exists, not as a universal wrapper.**
 
 ## License
 
