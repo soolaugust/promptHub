@@ -1,4 +1,4 @@
-# rust:1.80 includes the full toolchain needed by rusqlite bundled (gcc, etc.)
+# Build with entrypoint-based seeding
 FROM rust:1.85 as builder
 WORKDIR /build
 COPY . .
