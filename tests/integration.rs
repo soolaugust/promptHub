@@ -131,7 +131,7 @@ fn test_var_substitution() {
     let base = resolver.resolve(&pf.from).unwrap();
     let merged = prompthub::merger::merge_layers(&base, &[], pf.params.clone()).unwrap();
 
-    let text = prompthub::renderer::render_variables(
+    let (text, undef) = prompthub::renderer::render_variables(
         &merged,
         &pf.vars,
         pf.task.as_deref(),
@@ -139,6 +139,7 @@ fn test_var_substitution() {
         tmp.path(),
     ).unwrap();
 
+    assert!(undef.is_empty(), "unexpected undefined vars: {:?}", undef);
     assert!(text.contains("Translate to Spanish."), "Got: {}", text);
     assert!(text.contains("Translate: hello"), "Got: {}", text);
 }
@@ -176,7 +177,7 @@ fn test_include_file() {
     let base = resolver.resolve(&pf.from).unwrap();
     let merged = prompthub::merger::merge_layers(&base, &[], HashMap::new()).unwrap();
 
-    let text = prompthub::renderer::render_variables(
+    let (text, _undef) = prompthub::renderer::render_variables(
         &merged,
         &pf.vars,
         None,

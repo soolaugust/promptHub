@@ -58,9 +58,7 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
 }
 
 fn fetch_url(url: &str) -> Result<String> {
-    let response = reqwest::blocking::get(url).map_err(|e| {
-        PromptHubError::Network(e)
-    })?;
+    let response = reqwest::blocking::get(url).map_err(PromptHubError::Network)?;
 
     if !response.status().is_success() {
         return Err(PromptHubError::Other(

@@ -197,7 +197,7 @@ fn build_prompt_impl(params: BuildPromptParams) -> anyhow::Result<String> {
     let merged = merger::merge_layers(&base_layer, &additional_layers, pf.params.clone())
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    let final_text = renderer::render_variables(
+    let (final_text, undef_vars) = renderer::render_variables(
         &merged,
         &pf.vars,
         pf.task.as_deref(),
@@ -210,19 +210,24 @@ fn build_prompt_impl(params: BuildPromptParams) -> anyhow::Result<String> {
         .chain(pf.layers.iter().map(|r| r.display()))
         .collect();
 
+    let mut all_warnings = merged.warnings.clone();
+    for var_name in &undef_vars {
+        all_warnings.push(format!("Undefined variable: ${{{}}}", var_name));
+    }
+
     #[derive(Serialize)]
     struct BuildResult<'a> {
         prompt: &'a str,
         params: &'a HashMap<String, String>,
         layers: Vec<String>,
-        warnings: &'a Vec<String>,
+        warnings: Vec<String>,
     }
 
     let out = BuildResult {
         prompt: &final_text,
         params: &merged.params,
         layers: layer_names,
-        warnings: &merged.warnings,
+        warnings: all_warnings,
     };
 
     Ok(serde_json::to_string_pretty(&out)?)

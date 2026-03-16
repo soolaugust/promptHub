@@ -109,12 +109,15 @@ impl LayerResolver {
             }
             v if v.starts_with('v') && !v.contains('.') => {
                 // Major version match: "v1" matches "v1.0", "v1.1", etc.
+                // We require the directory name to equal the major prefix OR
+                // start with "<major>." to avoid "v1" matching "v10", "v11", etc.
                 let major = v;
+                let major_dot = format!("{}.", major);
                 let matching: Vec<&PathBuf> = versions.iter()
                     .filter(|p| {
                         p.file_name()
                             .and_then(|n| n.to_str())
-                            .map(|n| n.starts_with(major))
+                            .map(|n| n == major || n.starts_with(major_dot.as_str()))
                             .unwrap_or(false)
                     })
                     .collect();
@@ -243,5 +246,21 @@ models: []
         let layer = resolver.resolve(&layer_ref).unwrap();
         assert_eq!(layer.meta.version, "v1.1",
             "major version 'v1' should resolve to latest v1.x, not v2.0");
+    }
+
+    #[test]
+    fn test_resolve_major_version_no_false_prefix_match() {
+        let tmp = TempDir::new().unwrap();
+        // "v1" must NOT match "v10" or "v11".
+        // Use a unique name that cannot exist in the global layers cache.
+        create_test_layer(tmp.path(), "prefix-test-unique", "test", "v10.0");
+        create_test_layer(tmp.path(), "prefix-test-unique", "test", "v11.0");
+
+        // Only search the tmp directory (no global layers), so global state can't interfere.
+        let resolver = LayerResolver { extra_paths: vec![tmp.path().to_path_buf()] };
+        let layer_ref = LayerRef { source: "test/prefix-test-unique".to_string(), version: "v1".to_string() };
+        // No v1.x versions exist; should return an error (not v10/v11)
+        assert!(resolver.resolve(&layer_ref).is_err(),
+            "major version 'v1' must not match 'v10' or 'v11'");
     }
 }

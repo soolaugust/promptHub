@@ -11,15 +11,17 @@ fn var_regex() -> &'static Regex {
     VAR_REGEX.get_or_init(|| Regex::new(r"\$\{([^}]+)\}").expect("invalid regex"))
 }
 
-/// Render variables in merged prompt content
+/// Render variables in merged prompt content.
+/// Returns `(rendered_text, undefined_var_warnings)`.
 pub fn render_variables(
     merged: &MergedPrompt,
     vars: &HashMap<String, String>,
     task: Option<&str>,
     includes: &[(std::path::PathBuf, String)],
     _base_dir: &Path,
-) -> Result<String> {
+) -> Result<(String, Vec<String>)> {
     let mut text = merged.to_text();
+    let mut undef_warnings: Vec<String> = Vec::new();
 
     // Process INCLUDE content (append each included file)
     for (_path, content) in includes {
@@ -28,37 +30,37 @@ pub fn render_variables(
     }
 
     // Substitute ${var_name} placeholders
-    text = substitute_vars(&text, vars)?;
+    let (substituted, body_warns) = substitute_vars(&text, vars)?;
+    text = substituted;
+    undef_warnings.extend(body_warns);
 
     // Append TASK at the end
     if let Some(task_text) = task {
-        let rendered_task = substitute_vars(task_text, vars)?;
+        let (rendered_task, task_warns) = substitute_vars(task_text, vars)?;
+        undef_warnings.extend(task_warns);
         text.push_str("\n\n---\n\n");
         text.push_str(&rendered_task);
     }
 
-    Ok(text)
+    Ok((text, undef_warnings))
 }
 
-/// Substitute ${var_name} in text with values from vars map
-pub fn substitute_vars(text: &str, vars: &HashMap<String, String>) -> Result<String> {
+/// Substitute ${var_name} in text with values from vars map.
+/// Returns `(substituted_text, list_of_undefined_variable_names)`.
+pub fn substitute_vars(text: &str, vars: &HashMap<String, String>) -> Result<(String, Vec<String>)> {
     let re = var_regex();
-    let mut warnings = Vec::new();
+    let mut undef = Vec::new();
     let result = re.replace_all(text, |caps: &regex::Captures| {
         let var_name = &caps[1];
         if let Some(value) = vars.get(var_name) {
             value.clone()
         } else {
-            warnings.push(var_name.to_string());
-            caps[0].to_string() // Keep original if not found
+            undef.push(var_name.to_string());
+            caps[0].to_string() // Keep original placeholder if not found
         }
     }).to_string();
 
-    if !warnings.is_empty() {
-        eprintln!("Warning: undefined variables: {}", warnings.join(", "));
-    }
-
-    Ok(result)
+    Ok((result, undef))
 }
 
 /// Load INCLUDE file content
@@ -85,16 +87,19 @@ mod tests {
         vars.insert("name".to_string(), "Alice".to_string());
 
         let text = "Review in ${language} by ${name}";
-        let result = substitute_vars(text, &vars).unwrap();
+        let (result, undef) = substitute_vars(text, &vars).unwrap();
         assert_eq!(result, "Review in 中文 by Alice");
+        assert!(undef.is_empty());
     }
 
     #[test]
     fn test_substitute_undefined_var_kept() {
         let vars = HashMap::new();
         let text = "Review in ${language}";
-        let result = substitute_vars(text, &vars).unwrap();
+        let (result, undef) = substitute_vars(text, &vars).unwrap();
         assert_eq!(result, "Review in ${language}");
+        assert_eq!(undef, vec!["language".to_string()],
+            "undefined variable should be reported");
     }
 
     #[test]
@@ -102,7 +107,18 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert("x".to_string(), "42".to_string());
         let text = "${x} + ${x} = 84";
-        let result = substitute_vars(text, &vars).unwrap();
+        let (result, undef) = substitute_vars(text, &vars).unwrap();
         assert_eq!(result, "42 + 42 = 84");
+        assert!(undef.is_empty());
+    }
+
+    #[test]
+    fn test_substitute_undefined_var_reported_once_per_occurrence() {
+        let vars = HashMap::new();
+        // Same undefined var used twice - both occurrences are reported
+        let text = "${missing} and ${missing}";
+        let (result, undef) = substitute_vars(text, &vars).unwrap();
+        assert_eq!(result, "${missing} and ${missing}");
+        assert_eq!(undef.len(), 2, "each occurrence is reported separately");
     }
 }

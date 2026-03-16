@@ -121,7 +121,7 @@ fn cmd_build(
         }
     }
 
-    let final_text = renderer::render_variables(
+    let (final_text, undef_vars) = renderer::render_variables(
         &merged,
         &pf.vars,
         pf.task.as_deref(),
@@ -130,11 +130,21 @@ fn cmd_build(
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+    // Surface undefined-variable warnings through the same channel as merge warnings
+    let mut all_warnings = merged.warnings.clone();
+    for var_name in &undef_vars {
+        let msg = format!("Undefined variable: ${{{}}}", var_name);
+        if show_warnings {
+            eprintln!("{} {}", "warning:".yellow(), msg);
+        }
+        all_warnings.push(msg);
+    }
+
     let layer_names: Vec<String> = std::iter::once(pf.from.display())
         .chain(pf.layers.iter().map(|r| r.display()))
         .collect();
 
-    output::output_result(&final_text, format, &merged.params, &layer_names, &merged.warnings)
+    output::output_result(&final_text, format, &merged.params, &layer_names, &all_warnings)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
     Ok(())
@@ -361,6 +371,7 @@ fn build_to_text(promptfile_path: &Path) -> anyhow::Result<String> {
     let merged = merger::merge_layers(&base_layer, &additional?, pf.params.clone())
         .map_err(|e| anyhow::anyhow!("{}", e))?;
     renderer::render_variables(&merged, &pf.vars, pf.task.as_deref(), &[], base_dir)
+        .map(|(text, _)| text)
         .map_err(|e| anyhow::anyhow!("{}", e))
 }
 
