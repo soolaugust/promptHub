@@ -120,4 +120,63 @@ mod tests {
         assert_eq!(result, "${missing} and ${missing}");
         assert_eq!(undef.len(), 2, "each occurrence is reported separately");
     }
+
+    #[test]
+    fn test_render_variables_with_includes_and_task() {
+        use crate::merger::MergedPrompt;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let mut sections = HashMap::new();
+        sections.insert("role".to_string(), "You are a ${role}.".to_string());
+        let merged = MergedPrompt {
+            sections,
+            section_order: vec!["role".to_string()],
+            params: HashMap::new(),
+            warnings: Vec::new(),
+        };
+
+        let mut vars = HashMap::new();
+        vars.insert("role".to_string(), "code reviewer".to_string());
+
+        let include_path = PathBuf::from("context.md");
+        let includes = vec![(include_path, "Extra context here.".to_string())];
+
+        let task = Some("Review this code.");
+
+        let (text, undef) = render_variables(&merged, &vars, task, &includes).unwrap();
+
+        assert!(text.contains("You are a code reviewer."),
+            "variable substitution should work in body");
+        assert!(text.contains("Extra context here."),
+            "include content should be appended");
+        assert!(text.contains("---"), "task separator should be present");
+        assert!(text.contains("Review this code."),
+            "task text should be appended");
+        assert!(undef.is_empty(), "no undefined vars expected");
+    }
+
+    #[test]
+    fn test_render_variables_task_with_undef_var() {
+        use crate::merger::MergedPrompt;
+        use std::collections::HashMap;
+
+        let mut sections = HashMap::new();
+        sections.insert("body".to_string(), "Body text.".to_string());
+        let merged = MergedPrompt {
+            sections,
+            section_order: vec!["body".to_string()],
+            params: HashMap::new(),
+            warnings: Vec::new(),
+        };
+
+        let vars = HashMap::new();
+        let task = Some("Review in ${language}.");
+
+        let (text, undef) = render_variables(&merged, &vars, task, &[]).unwrap();
+
+        assert!(text.contains("${language}"), "undefined var kept in task");
+        assert_eq!(undef, vec!["language".to_string()],
+            "undefined var in task should be reported");
+    }
 }

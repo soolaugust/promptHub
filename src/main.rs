@@ -202,10 +202,17 @@ fn cmd_layer_list(namespace_filter: Option<&str>) -> anyhow::Result<()> {
         })
         .collect();
 
-    println!("{:<50} {}", "LAYER".bold(), "PATH".bold());
-    println!("{}", "-".repeat(80));
+    // Compute column width dynamically so long names don't truncate
+    let name_width = filtered.iter()
+        .map(|(n, _)| n.len())
+        .max()
+        .unwrap_or(5)
+        .max(5); // at least as wide as "LAYER"
+    let separator_width = name_width + 2 + 40; // name + gap + path column
+    println!("{:<width$} {}", "LAYER".bold(), "PATH".bold(), width = name_width);
+    println!("{}", "-".repeat(separator_width));
     for (name, path) in &filtered {
-        println!("{:<50} {}", name, path.display());
+        println!("{:<width$} {}", name, path.display(), width = name_width);
     }
     println!("\n{} layer(s) found", filtered.len());
     Ok(())
