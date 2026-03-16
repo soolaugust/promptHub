@@ -1,0 +1,10 @@
+name: fact-check
+namespace: guard
+version: v1.0
+description: "Enforce factual accuracy and uncertainty acknowledgment"
+author: prompthub
+tags: [accuracy, honesty, epistemic]
+sections: [constraints, output-format]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

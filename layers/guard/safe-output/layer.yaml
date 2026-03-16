@@ -1,0 +1,10 @@
+name: safe-output
+namespace: guard
+version: v1.0
+description: "Apply safety constraints to prevent harmful content generation"
+author: prompthub
+tags: [safety, content-moderation, responsible-ai]
+sections: [constraints]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

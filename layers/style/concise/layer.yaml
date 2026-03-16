@@ -1,0 +1,10 @@
+name: concise
+namespace: style
+version: v1.0
+description: "Apply concise, direct communication style"
+author: prompthub
+tags: [style, brevity, clarity]
+sections: [constraints]
+conflicts: [style/verbose]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

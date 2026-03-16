@@ -1,0 +1,9 @@
+# frontend-design skill — rebuilt with PromptHub
+# Original: anthropics/skills/frontend-design
+
+FROM base/frontend-builder:v1.0
+LAYER anti-slop:v1.0
+
+PARAM model "claude-sonnet-4-6"
+
+TASK "Build the frontend interface described above."

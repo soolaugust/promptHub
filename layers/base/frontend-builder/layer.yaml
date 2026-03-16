@@ -1,0 +1,10 @@
+name: frontend-builder
+namespace: base
+version: v1.0
+description: "Production-grade frontend development: design thinking, implementation, and code quality"
+author: prompthub
+tags: [frontend, web, react, html, css, ui, design]
+sections: [role, workflow, implementation]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*]

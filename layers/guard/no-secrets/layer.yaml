@@ -1,0 +1,10 @@
+name: no-secrets
+namespace: guard
+version: v1.0
+description: "Prevent generation or exposure of sensitive information"
+author: prompthub
+tags: [security, privacy, safety]
+sections: [constraints]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

@@ -1,0 +1,10 @@
+name: office-doc
+namespace: base
+version: v1.0
+description: "Core knowledge for working with Office files: format structure, tool selection, creation APIs"
+author: prompthub
+tags: [office, docx, pptx, xlsx, documents]
+sections: [role, tool-selection]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*]

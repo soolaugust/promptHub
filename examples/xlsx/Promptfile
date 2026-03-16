@@ -1,0 +1,10 @@
+# xlsx skill — rebuilt with PromptHub
+# Original: anthropics/skills/xlsx
+
+FROM base/office-doc:v1.0          # Core: what is .xlsx, pandas vs openpyxl decision
+LAYER office-toolkit:v1.0          # Shared: LibreOffice + recalc workflow
+LAYER office-quality:v1.0          # Shared: zero errors, Arial font, source docs
+
+PARAM model "claude-sonnet-4-6"
+
+TASK "Create or edit the spreadsheet as described."

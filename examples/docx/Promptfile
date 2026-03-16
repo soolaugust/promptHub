@@ -1,0 +1,10 @@
+# docx skill — rebuilt with PromptHub
+# Original: anthropics/skills/docx
+
+FROM base/office-doc:v1.0          # Core: .docx structure, docx-js setup, page sizes
+LAYER office-toolkit:v1.0          # Shared: LibreOffice + unpack/repack workflow
+LAYER office-quality:v1.0          # Shared: zero errors, Arial font, source docs
+
+PARAM model "claude-sonnet-4-6"
+
+TASK "Create or edit the Word document as described."

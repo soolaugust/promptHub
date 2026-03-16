@@ -1,0 +1,10 @@
+name: chinese-markdown
+namespace: lang
+version: v1.0
+description: "Output in Simplified Chinese with Markdown formatting"
+author: prompthub
+tags: [language, chinese, markdown, formatting]
+sections: [constraints, output-format]
+conflicts: [lang/english-academic]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

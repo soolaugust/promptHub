@@ -1,0 +1,14 @@
+# pptx skill — rebuilt with PromptHub
+# Original: anthropics/skills/pptx
+#
+# The original skill mixes: reading tools + design principles + typography rules
+# Here we separate those concerns into reusable layers.
+
+FROM base/office-doc:v1.0          # Core: what is a .pptx, when to use which tool
+LAYER office-toolkit:v1.0          # Shared: LibreOffice + unpack/repack workflow
+LAYER office-quality:v1.0          # Shared: zero errors, font consistency
+LAYER anti-slop:v1.0               # Shared: design aesthetics (also used by frontend-design)
+
+PARAM model "claude-sonnet-4-6"
+
+TASK "Create or edit the PowerPoint presentation as described."

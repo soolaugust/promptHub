@@ -1,0 +1,10 @@
+name: translator
+namespace: base
+version: v1.0
+description: "Professional translator with cultural adaptation expertise"
+author: prompthub
+tags: [translation, language, localization]
+sections: [role, constraints, output-format]
+conflicts: [base/code-reviewer, base/writer]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

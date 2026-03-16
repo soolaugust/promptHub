@@ -1,0 +1,10 @@
+name: english-academic
+namespace: lang
+version: v1.0
+description: "Output in formal English academic format"
+author: prompthub
+tags: [language, english, academic, formal]
+sections: [constraints]
+conflicts: [lang/chinese-markdown]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

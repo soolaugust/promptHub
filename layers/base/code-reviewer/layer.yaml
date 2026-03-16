@@ -1,0 +1,10 @@
+name: code-reviewer
+namespace: base
+version: v1.0
+description: "Professional code reviewer with deep engineering expertise"
+author: prompthub
+tags: [code, review, engineering, security]
+sections: [role, constraints, output-format]
+conflicts: [base/translator, base/writer]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

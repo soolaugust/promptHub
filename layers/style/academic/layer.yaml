@@ -1,0 +1,10 @@
+name: academic
+namespace: style
+version: v1.0
+description: "Apply rigorous academic writing style"
+author: prompthub
+tags: [style, academic, formal, scholarly]
+sections: [constraints, output-format]
+conflicts: [style/concise]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

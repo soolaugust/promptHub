@@ -1,0 +1,10 @@
+name: anti-slop
+namespace: anti-slop
+version: v1.0
+description: "Reject generic AI aesthetics. Enforce intentional, distinctive design choices."
+author: prompthub
+tags: [design, aesthetics, quality, frontend, ui]
+sections: [constraints]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

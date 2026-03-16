@@ -1,0 +1,10 @@
+name: structured-output
+namespace: lang
+version: v1.0
+description: "Produce structured, machine-parseable output"
+author: prompthub
+tags: [output, structured, json, parseable]
+sections: [constraints, output-format]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

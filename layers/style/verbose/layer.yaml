@@ -1,0 +1,10 @@
+name: verbose
+namespace: style
+version: v1.0
+description: "Apply thorough, explanatory communication style"
+author: prompthub
+tags: [style, detailed, educational]
+sections: [constraints]
+conflicts: [style/concise]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

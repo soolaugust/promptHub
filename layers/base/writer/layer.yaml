@@ -1,0 +1,10 @@
+name: writer
+namespace: base
+version: v1.0
+description: "Professional writer for clear, engaging content"
+author: prompthub
+tags: [writing, content, communication]
+sections: [role, constraints, output-format]
+conflicts: [base/code-reviewer, base/translator]
+requires: []
+models: [claude-*, gpt-4*, gemini-*]

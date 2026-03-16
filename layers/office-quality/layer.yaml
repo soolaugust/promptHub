@@ -1,0 +1,10 @@
+name: office-quality
+namespace: office-quality
+version: v1.0
+description: "Quality standards for Office document output: zero errors, consistent fonts, source documentation"
+author: prompthub
+tags: [office, quality, standards, excel, word]
+sections: [constraints]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*]

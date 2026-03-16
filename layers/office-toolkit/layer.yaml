@@ -1,0 +1,10 @@
+name: office-toolkit
+namespace: office-toolkit
+version: v1.0
+description: "LibreOffice-based toolchain for reading, editing, and converting Office files (.docx/.pptx/.xlsx)"
+author: prompthub
+tags: [office, libreoffice, docx, pptx, xlsx, tools]
+sections: [tools, workflow]
+conflicts: []
+requires: []
+models: [claude-*, gpt-4*]
