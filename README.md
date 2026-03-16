@@ -6,6 +6,9 @@ A layered prompt management system inspired by Docker. Compose reusable prompt l
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)
+[![CI](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml/badge.svg)](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/prompthub.svg)](https://crates.io/crates/prompthub)
+[![crates.io downloads](https://img.shields.io/crates/d/prompthub.svg)](https://crates.io/crates/prompthub)
 
 ![PromptHub demo](docs/demo.gif)
 
@@ -493,6 +496,10 @@ We rebuilt four skills from [anthropics/skills](https://github.com/anthropics/sk
 The same content that lived in 3 separate skill files now lives in one layer. A single edit to `office-toolkit/prompt.md` propagates to all three Office skills on the next build.
 
 Not all skills benefit. The `mcp-builder` skill's four-phase workflow (Research → Implement → Test → Evaluate) is a tightly coupled whole — splitting it into layers would break the logical flow. **PromptHub adds value where genuine shared content exists, not as a universal wrapper.**
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=soolaugust/promptHub&type=Date)](https://star-history.com/#soolaugust/promptHub&Date)
 
 ## License
 

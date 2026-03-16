@@ -6,6 +6,9 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)
+[![CI](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml/badge.svg)](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/prompthub.svg)](https://crates.io/crates/prompthub)
+[![crates.io downloads](https://img.shields.io/crates/d/prompthub.svg)](https://crates.io/crates/prompthub)
 
 ![PromptHub demo](docs/demo.gif)
 
@@ -493,6 +496,10 @@ ph build
 原本分散在三个 skill 文件里的内容，现在统一维护在一个层里。修改 `office-toolkit/prompt.md` 一处，所有引用它的 skill 下次构建时自动生效。
 
 并非所有 skill 都适合用 PromptHub 管理。`mcp-builder` 的四阶段工作流（研究 → 实现 → 测试 → 评估）是紧密耦合的整体——强行拆层会破坏流程逻辑。**PromptHub 在存在真实共享内容时才有价值，不是通用包装器。**
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=soolaugust/promptHub&type=Date)](https://star-history.com/#soolaugust/promptHub&Date)
 
 ## License
 
