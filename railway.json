@@ -5,7 +5,7 @@
     "dockerfilePath": "registry/Dockerfile"
   },
   "deploy": {
-    "startCommand": "ph-registry /etc/prompthub/registry.yaml",
+    "startCommand": "/entrypoint.sh",
     "restartPolicyType": "ON_FAILURE"
   }
 }
