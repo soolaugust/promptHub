@@ -5,9 +5,11 @@ use crate::config::{global_layers_dir};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Parse a directory name as semver, stripping a leading 'v' if present.
+/// Parse a version string as semver, stripping a leading 'v' if present.
 /// Handles two-part versions like "v1.9" by treating them as "1.9.0".
-fn parse_semver(dir_name: &str) -> Option<semver::Version> {
+/// Exposed publicly so binaries (e.g. `ph`) can reuse it when sorting
+/// version lists, avoiding duplication of the two-step parse logic.
+pub fn parse_semver(dir_name: &str) -> Option<semver::Version> {
     let s = dir_name.strip_prefix('v').unwrap_or(dir_name);
     // Try exact parse first (e.g. "1.9.0")
     if let Ok(v) = semver::Version::parse(s) {

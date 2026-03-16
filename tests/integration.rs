@@ -248,6 +248,7 @@ fn test_resolve_semver_latest_ordering() {
 
 // ── Test 7: Section-override warning is generated ──────────────────────────────
 
+
 #[test]
 fn test_section_override_warning_generated() {
     let tmp = TempDir::new().unwrap();
@@ -273,4 +274,37 @@ fn test_section_override_warning_generated() {
         "Overriding a section should generate a warning");
     assert!(merged.warnings[0].contains("constraints"),
         "Warning should mention the overridden section name");
+}
+
+// ── Test 8: Undefined variable warning is returned to caller ──────────────────
+
+#[test]
+fn test_undefined_var_warning_returned() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    // Layer uses ${missing_var} which is not defined in the Promptfile
+    create_layer(&layers_dir, "base", "template", "v1.0", &[
+        ("role", "Answer in ${missing_var}."),
+    ], &[]);
+
+    let pf_content = "FROM base/template:v1.0\n";
+    let pf = prompthub::parser::parse(pf_content).unwrap();
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base = resolver.resolve(&pf.from).unwrap();
+    let merged = prompthub::merger::merge_layers(&base, &[], pf.params.clone()).unwrap();
+
+    let (text, undef) = prompthub::renderer::render_variables(
+        &merged,
+        &pf.vars,  // empty vars map
+        None,
+        &[],
+    ).unwrap();
+
+    // The placeholder should be kept verbatim
+    assert!(text.contains("${missing_var}"), "undefined var should stay as-is in output");
+    // And the variable name should be reported
+    assert_eq!(undef, vec!["missing_var".to_string()],
+        "undefined variable name should be reported in the warnings list");
 }

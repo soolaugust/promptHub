@@ -6,7 +6,6 @@ use clap::Parser;
 use cli::{Cli, Commands, LayerCommands};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
-use semver::Version;
 
 fn main() {
     let cli = Cli::parse();
@@ -391,13 +390,7 @@ fn cmd_history(layer_name: &str) -> anyhow::Result<()> {
         .collect();
     // Use semver-aware sort so v1.10 appears after v1.9
     versions.sort_by(|a, b| {
-        let parse_ver = |s: &str| -> Option<Version> {
-            let s = s.strip_prefix('v').unwrap_or(s);
-            Version::parse(s)
-                .or_else(|_| Version::parse(&format!("{}.0", s)))
-                .ok()
-        };
-        match (parse_ver(a), parse_ver(b)) {
+        match (resolver::parse_semver(a), resolver::parse_semver(b)) {
             (Some(va), Some(vb)) => va.cmp(&vb),
             _ => a.cmp(b),
         }
