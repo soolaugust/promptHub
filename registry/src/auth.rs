@@ -11,6 +11,7 @@ pub fn generate_token() -> String {
 }
 
 /// Hash a password using bcrypt.
+#[allow(dead_code)]
 pub fn hash_password(password: &str) -> Result<String> {
     bcrypt::hash(password, bcrypt::DEFAULT_COST)
         .map_err(|e| RegistryError::Internal(e.to_string()))
