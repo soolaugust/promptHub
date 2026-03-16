@@ -65,6 +65,19 @@ impl Layer {
             String::new()
         };
 
+        // Validate required fields so callers get a clear error rather than
+        // silently operating on a layer with no name or version.
+        if meta.name.is_empty() {
+            return Err(crate::error::PromptHubError::ValidationError(
+                format!("{}: 'name' field is required", yaml_path.display())
+            ));
+        }
+        if meta.version.is_empty() {
+            return Err(crate::error::PromptHubError::ValidationError(
+                format!("{}: 'version' field is required", yaml_path.display())
+            ));
+        }
+
         let (sections, dup_warnings) = parse_sections(&content);
         for w in &dup_warnings {
             eprintln!("Warning ({}): {}", prompt_path.display(), w);
@@ -295,5 +308,39 @@ Use markdown."#;
         let long_header = format!("[{}]", long_name);
         assert_eq!(parse_section_header(&long_header), None,
             "name exceeding max length should be rejected");
+    }
+
+    #[test]
+    fn test_load_from_dir_missing_name_errors() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        // Write a layer.yaml with an empty name
+        let yaml = "name: \"\"\nversion: v1.0\n";
+        std::fs::write(tmp.path().join("layer.yaml"), yaml).unwrap();
+        std::fs::write(tmp.path().join("prompt.md"), "[role]\nContent.\n").unwrap();
+
+        let result = Layer::load_from_dir(tmp.path());
+        assert!(result.is_err(), "empty name should produce a validation error");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("name") || msg.contains("required"),
+            "error should mention 'name' or 'required', got: {}", msg);
+    }
+
+    #[test]
+    fn test_load_from_dir_missing_version_errors() {
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        // Write a layer.yaml with no version field (serde default is empty string)
+        let yaml = "name: my-layer\n";
+        std::fs::write(tmp.path().join("layer.yaml"), yaml).unwrap();
+        std::fs::write(tmp.path().join("prompt.md"), "[role]\nContent.\n").unwrap();
+
+        let result = Layer::load_from_dir(tmp.path());
+        assert!(result.is_err(), "empty version should produce a validation error");
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("version") || msg.contains("required"),
+            "error should mention 'version' or 'required', got: {}", msg);
     }
 }

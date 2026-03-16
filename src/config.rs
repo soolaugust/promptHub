@@ -22,11 +22,17 @@ impl Config {
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
                 .with_context(|| format!("Cannot read config: {}", config_path.display()))?;
-            serde_yaml::from_str(&content)
+            Self::from_yaml(&content)
                 .with_context(|| format!("Cannot parse config YAML: {}", config_path.display()))
         } else {
             Ok(Config::default_config())
         }
+    }
+
+    /// Parse a `Config` from a YAML string.  Useful for testing without touching
+    /// the global config path on disk.
+    pub fn from_yaml(yaml: &str) -> anyhow::Result<Self> {
+        serde_yaml::from_str(yaml).map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub fn default_config() -> Self {
@@ -53,6 +59,67 @@ impl Config {
 
     pub fn default_source(&self) -> Option<&Source> {
         self.sources.iter().find(|s| s.default).or_else(|| self.sources.first())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config_has_official_source() {
+        let cfg = Config::default_config();
+        assert_eq!(cfg.sources.len(), 1, "default config should have one source");
+        assert_eq!(cfg.sources[0].name, "official");
+        assert!(cfg.sources[0].default, "official source should be marked as default");
+    }
+
+    #[test]
+    fn test_default_source_returns_default_marked_source() {
+        let cfg = Config::default_config();
+        let src = cfg.default_source().expect("default source should be present");
+        assert_eq!(src.name, "official");
+    }
+
+    #[test]
+    fn test_default_source_falls_back_to_first_when_none_marked() {
+        let cfg = Config {
+            sources: vec![
+                Source { name: "mirror".to_string(), url: "https://mirror.example.com".to_string(), default: false },
+                Source { name: "secondary".to_string(), url: "https://secondary.example.com".to_string(), default: false },
+            ],
+        };
+        let src = cfg.default_source().expect("should fall back to first source");
+        assert_eq!(src.name, "mirror", "first source should be used as fallback");
+    }
+
+    #[test]
+    fn test_from_str_parses_valid_yaml() {
+        let yaml = r#"
+sources:
+  - name: custom
+    url: https://example.com/layers
+    default: true
+"#;
+        let cfg = Config::from_yaml(yaml).expect("should parse valid YAML");
+        assert_eq!(cfg.sources.len(), 1);
+        assert_eq!(cfg.sources[0].name, "custom");
+        assert_eq!(cfg.sources[0].url, "https://example.com/layers");
+        assert!(cfg.sources[0].default);
+    }
+
+    #[test]
+    fn test_from_str_empty_sources() {
+        let yaml = "sources: []\n";
+        let cfg = Config::from_yaml(yaml).expect("should parse empty sources");
+        assert!(cfg.sources.is_empty());
+        assert!(cfg.default_source().is_none(), "no sources means no default source");
+    }
+
+    #[test]
+    fn test_from_str_invalid_yaml_errors() {
+        let yaml = "sources: [invalid: yaml: here\n";
+        assert!(Config::from_yaml(yaml).is_err(), "malformed YAML should produce an error");
     }
 }
 

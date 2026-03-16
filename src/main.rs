@@ -159,10 +159,22 @@ fn cmd_layer_new(name: &str, base_dir: &Path) -> anyhow::Result<()> {
     }
     std::fs::create_dir_all(&layer_dir)?;
 
-    let yaml = format!(
-        "name: {}\nnamespace: {}\nversion: v1.0\ndescription: \"\"\nauthor: \"\"\ntags: []\nsections: [role, constraints, output-format]\nconflicts: []\nrequires: []\nmodels: [claude-*, gpt-4*]\n",
-        layer_name, namespace
-    );
+    // Build the LayerMeta struct and serialize it so the output is always
+    // valid YAML regardless of special characters in the layer name.
+    let template_meta = layer::LayerMeta {
+        name: layer_name.clone(),
+        namespace: namespace.clone(),
+        version: "v1.0".to_string(),
+        description: String::new(),
+        author: String::new(),
+        tags: Vec::new(),
+        sections: vec!["role".to_string(), "constraints".to_string(), "output-format".to_string()],
+        conflicts: Vec::new(),
+        requires: Vec::new(),
+        models: vec!["claude-*".to_string(), "gpt-4*".to_string()],
+    };
+    let yaml = serde_yaml::to_string(&template_meta)
+        .with_context(|| "Failed to serialize layer.yaml template")?;
 
     let prompt = "[role]\nDescribe the role or persona here.\n\n[constraints]\n- Constraint 1\n- Constraint 2\n\n[output-format]\nDescribe the expected output format.\n";
 
