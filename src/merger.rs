@@ -1,6 +1,6 @@
 use crate::error::{PromptHubError, Result};
 use crate::layer::Layer;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Result of merging multiple layers
 #[derive(Debug, Clone)]
@@ -62,10 +62,12 @@ pub fn merge_layers(
     // Start with base layer sections
     let mut merged_sections = base.sections.clone();
     let mut section_order: Vec<String> = base.meta.sections.clone();
+    // Track which names are already in section_order for O(1) dedup
+    let mut order_set: HashSet<String> = section_order.iter().cloned().collect();
 
-    // Add sections not yet in order
+    // Add sections present in base.sections but not yet in order
     for key in base.sections.keys() {
-        if !section_order.contains(key) {
+        if order_set.insert(key.clone()) {
             section_order.push(key.clone());
         }
     }
@@ -84,7 +86,7 @@ pub fn merge_layers(
             } else {
                 // New section → append
                 merged_sections.insert(section_name.clone(), content.clone());
-                if !section_order.contains(section_name) {
+                if order_set.insert(section_name.clone()) {
                     section_order.push(section_name.clone());
                 }
             }
@@ -207,5 +209,38 @@ mod tests {
         let output_pos = text.find("Output format.").unwrap();
         assert!(role_pos < constraints_pos);
         assert!(constraints_pos < output_pos);
+    }
+
+    #[test]
+    fn test_sections_not_in_meta_sections_are_included() {
+        // A layer may have sections in prompt.md that are NOT listed in meta.sections.
+        // They should still appear in the merged output (not silently dropped).
+        use crate::layer::LayerMeta;
+        let mut section_map = HashMap::new();
+        section_map.insert("role".to_string(), "You are helpful.".to_string());
+        section_map.insert("extra".to_string(), "Bonus content.".to_string());
+
+        let base = Layer {
+            meta: LayerMeta {
+                name: "test".to_string(),
+                namespace: "base".to_string(),
+                version: "v1.0".to_string(),
+                description: String::new(),
+                author: String::new(),
+                tags: Vec::new(),
+                // meta.sections only lists "role", not "extra"
+                sections: vec!["role".to_string()],
+                conflicts: Vec::new(),
+                requires: Vec::new(),
+                models: Vec::new(),
+            },
+            content: String::new(),
+            sections: section_map,
+        };
+
+        let result = merge_layers(&base, &[], HashMap::new()).unwrap();
+        let text = result.to_text();
+        assert!(text.contains("You are helpful."), "role section missing from output");
+        assert!(text.contains("Bonus content."), "undeclared 'extra' section should be in output");
     }
 }

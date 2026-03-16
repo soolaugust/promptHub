@@ -99,11 +99,18 @@ pub fn parse_sections(content: &str) -> HashMap<String, String> {
     sections
 }
 
+/// Maximum allowed length (in bytes) for a section header name.
+const MAX_SECTION_NAME_LEN: usize = 64;
+
 /// Check if a line is a section header like [section-name]
 fn parse_section_header(line: &str) -> Option<String> {
     let line = line.trim();
     if line.starts_with('[') && line.ends_with(']') && line.len() > 2 {
         let inner = &line[1..line.len()-1];
+        // Enforce a reasonable maximum length to reject malformed input
+        if inner.len() > MAX_SECTION_NAME_LEN {
+            return None;
+        }
         // Make sure it's a valid identifier (alphanumeric, hyphens, underscores)
         if inner.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
             return Some(inner.to_lowercase());
@@ -184,5 +191,20 @@ Use markdown."#;
         let role_pos = content.find("[role]").unwrap();
         let constraints_pos = content.find("[constraints]").unwrap();
         assert!(role_pos < constraints_pos);
+    }
+
+    #[test]
+    fn test_parse_section_header_max_length() {
+        // Names at or below the limit are accepted
+        let ok_name = "a".repeat(MAX_SECTION_NAME_LEN);
+        let ok_header = format!("[{}]", ok_name);
+        assert!(parse_section_header(&ok_header).is_some(),
+            "name at max length should be accepted");
+
+        // Names exceeding the limit are rejected
+        let long_name = "a".repeat(MAX_SECTION_NAME_LEN + 1);
+        let long_header = format!("[{}]", long_name);
+        assert_eq!(parse_section_header(&long_header), None,
+            "name exceeding max length should be rejected");
     }
 }

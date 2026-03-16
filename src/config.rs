@@ -22,7 +22,8 @@ impl Config {
         if config_path.exists() {
             let content = std::fs::read_to_string(&config_path)
                 .with_context(|| format!("Cannot read config: {}", config_path.display()))?;
-            Ok(serde_yaml::from_str(&content)?)
+            serde_yaml::from_str(&content)
+                .with_context(|| format!("Cannot parse config YAML: {}", config_path.display()))
         } else {
             Ok(Config::default_config())
         }
