@@ -183,7 +183,14 @@ fn build_promptfile(instructions: Vec<Instruction>) -> crate::error::Result<Prom
             Instruction::Layer(layer_ref) => layers.push(layer_ref),
             Instruction::Param(k, v) => { params.insert(k, v); }
             Instruction::Var(k, v) => { vars.insert(k, v); }
-            Instruction::Task(t) => { task = Some(t); }
+            Instruction::Task(t) => {
+                if task.is_some() {
+                    return Err(crate::error::PromptHubError::ParseError(
+                        "Multiple TASK directives found; only one is allowed".to_string()
+                    ));
+                }
+                task = Some(t);
+            }
             Instruction::Include(p) => includes.push(p),
             Instruction::Comment(_) => {}
         }
@@ -296,5 +303,15 @@ LAYER guard/fact-check:v1.0
         let content = "FROM base/writer:v1.0\nINCLUDE \"./context.md\n";
         assert!(parse(content).is_err(),
             "INCLUDE with mismatched quote should produce a parse error");
+    }
+
+    #[test]
+    fn test_parse_multiple_task_fails() {
+        // Multiple TASK directives should produce an error, just like multiple FROM
+        let content = "FROM base/writer:v1.0\nTASK \"First task\"\nTASK \"Second task\"\n";
+        let err = parse(content).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("TASK") || msg.contains("task"),
+            "error should mention TASK directive, got: {}", msg);
     }
 }

@@ -14,8 +14,9 @@ pub enum PromptHubError {
     #[error("Conflict detected between layers: {0} conflicts with {1}")]
     ConflictError(String, String),
 
-    #[error("Variable not defined: {0}")]
-    UndefinedVariable(String),
+    // Note: undefined variables in prompt templates are surfaced as warnings
+    // (returned as Vec<String> from render_variables), not as hard errors.
+    // The UndefinedVariable variant has been intentionally removed.
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
