@@ -4,56 +4,62 @@
 
 [English](README.md)
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)
+
 ![PromptHub demo](docs/demo.gif)
 
 ```
-┌─────────────────────────────────────────────┐
-│  Promptfile                                 │
-│                                             │
-│  FROM  base/code-reviewer:v1.0             │
-│  LAYER style/concise:v1.0                  │
-│  LAYER guard/no-secrets:v1.0               │
-│  VAR   language "中文"                      │
-│  TASK  "审查这个 Pull Request。"            │
-└──────────────────┬──────────────────────────┘
-                   │ ph build
-                   ▼
-┌─────────────────────────────────────────────┐
-│  合并后的 Prompt                            │
-│                                             │
-│  [role] 你是一位资深代码审查专家...         │
-│  [constraints] 保持简洁直接...              │
-│  [constraints] 不输出敏感信息...            │
-│  [output-format] ## 严重问题...             │
-│                                             │
-│  ---                                        │
-│  用中文审查这个 Pull Request。              │
-└─────────────────────────────────────────────┘
+╔═══════════════════════════════════════════════════╗
+║  Promptfile                                       ║
+║                                                   ║
+║  FROM   base/code-reviewer:v1.0                  ║
+║  LAYER  style/concise:v1.0                       ║
+║  LAYER  guard/no-secrets:v1.0                    ║
+║  VAR    language "中文"                           ║
+║  TASK   "审查这个 Pull Request。"                ║
+╚══════════════════════╦════════════════════════════╝
+                       ║
+                    ph build
+                       ║
+                       ▼
+╔═══════════════════════════════════════════════════╗
+║  合并后的 Prompt                                   ║
+║                                                   ║
+║  [role]          你是一位资深代码审查专家…         ║
+║  [constraints]   保持简洁直接…                    ║
+║  [constraints]   不输出敏感信息…                  ║
+║  [output-format] ## 严重问题…                     ║
+║                                                   ║
+║  ---                                              ║
+║  用中文审查这个 Pull Request。                     ║
+╚═══════════════════════════════════════════════════╝
 ```
 
 ## 工作原理
 
 ```
-  layers/                     Promptfile
-  ├── base/                   ──────────────────
-  │   └── code-reviewer/      FROM  base/code-reviewer:v1.0
-  │       ├── layer.yaml      LAYER style/concise:v1.0
-  │       └── prompt.md  ──▶  LAYER guard/no-secrets:v1.0
-  ├── style/                  VAR   language "中文"
-  │   └── concise/       ──▶  TASK  "审查代码"
+  layers/                          Promptfile
+  ├── base/                        ─────────────────────────────
+  │   └── code-reviewer/           FROM  base/code-reviewer:v1.0
+  │       ├── layer.yaml    ──▶    LAYER style/concise:v1.0
+  │       └── prompt.md            LAYER guard/no-secrets:v1.0
+  ├── style/                       VAR   language "中文"
+  │   └── concise/          ──▶   TASK  "审查代码"
   └── guard/
-      └── no-secrets/    ──▶
-              │
-              │  ph build
-              ▼
-  ┌──────────────────────────────────────┐
-  │  [role]        来自 code-reviewer    │
-  │  [constraints] 被 concise 覆盖       │  ← 同名 section：后层优先
-  │  [constraints] no-secrets 追加       │  ← 新 section：直接追加
-  │  [output-format] 来自 code-reviewer  │
-  │  ---                                 │
-  │  审查代码                            │
-  └──────────────────────────────────────┘
+      └── no-secrets/       ──▶
+                    │
+                 ph build
+                    │
+                    ▼
+  ╔══════════════════════════════════════════════╗
+  ║  [role]          ◀ 来自  code-reviewer       ║
+  ║  [constraints]   ◀ 被  concise 覆盖          ║  ← 同名 section：后层优先
+  ║  [constraints]   ◀ no-secrets 追加           ║  ← 新 section：直接追加
+  ║  [output-format] ◀ 来自  code-reviewer       ║
+  ║  ─────────────────────────────────────────── ║
+  ║  审查代码                                     ║
+  ╚══════════════════════════════════════════════╝
 ```
 
 层合并规则确定：**同名 section → 后层覆盖前层**，**新 section → 追加**。变量（`${language}`）在构建时完成替换。
@@ -75,6 +81,11 @@ cargo install --path registry/
 ```
 
 ## 快速开始
+
+```bash
+# 从官方仓库拉取层
+ph pull base/code-reviewer:v1.0
+```
 
 ```
 $ ph init
@@ -99,9 +110,6 @@ $ ph build --var language=English -o json
 ```
 
 ```bash
-# 从官方仓库拉取层
-ph pull base/code-reviewer:v1.0
-
 # 列出本地所有层
 ph layer list
 
@@ -249,26 +257,26 @@ sources:
 
 ```
   开发者 / CI 流水线 / AI Agent
-             │
-             │  HTTPS
-             ▼
-  ┌──────────────────────────────────────────────────┐
-  │  ph-registry  (Axum HTTP 服务器)                 │
-  │                                                  │
-  │  GET  /layers/{ns}/{name}/{ver}/layer.yaml       │
-  │  GET  /layers/{ns}/{name}/{ver}/prompt.md        │
-  │  PUT  /layers/{ns}/{name}/{ver}   (push)         │
-  │  GET  /layers?q=keyword           (搜索)         │
-  │  POST /v1/auth/login                             │
-  │  POST /v1/auth/token  (仅限管理员)               │
-  │                                                  │
-  │  ┌─────────────┐  ┌───────────────────────────┐ │
-  │  │  SQLite DB  │  │  S3 / MinIO / 文件系统    │ │
-  │  │  用户       │  │  layers/{ns}/{name}/{ver}/ │ │
-  │  │  token      │  │    layer.yaml              │ │
-  │  │  层元数据   │  │    prompt.md               │ │
-  │  └─────────────┘  └───────────────────────────┘ │
-  └──────────────────────────────────────────────────┘
+                   │
+                   │  HTTPS
+                   ▼
+  ╔══════════════════════════════════════════════════════╗
+  ║  ph-registry  (Axum · Rust)                          ║
+  ║                                                      ║
+  ║  GET  /layers/{ns}/{name}/{ver}/layer.yaml           ║
+  ║  GET  /layers/{ns}/{name}/{ver}/prompt.md            ║
+  ║  PUT  /layers/{ns}/{name}/{ver}          (push)      ║
+  ║  GET  /layers?q=keyword                  (搜索)      ║
+  ║  POST /v1/auth/login                                 ║
+  ║  POST /v1/auth/token                     (管理员)    ║
+  ║                                                      ║
+  ║  ┌─────────────────┐     ┌──────────────────────┐   ║
+  ║  │   SQLite DB     │     │  S3 · MinIO · FS     │   ║
+  ║  │  ▸ 用户         │     │  layers/             │   ║
+  ║  │  ▸ token        │     │  └── {ns}/{name}/    │   ║
+  ║  │  ▸ 层元数据     │     │      └── {ver}/      │   ║
+  ║  └─────────────────┘     └──────────────────────┘   ║
+  ╚══════════════════════════════════════════════════════╝
 ```
 
 ### 启动 Registry
@@ -430,21 +438,23 @@ my-project/
 `ph-mcp` 是一个 MCP（Model Context Protocol）服务器，让 Claude、Cursor 等 AI 助手可以直接调用 PromptHub，无需手动复制粘贴。
 
 ```
-  Claude Desktop / Cursor
-         │
-         │  MCP (stdio)
-         ▼
-  ┌─────────────────────┐
-  │      ph-mcp         │
-  │                     │
-  │  build_prompt  ───▶ 解析 → 解析层 → 合并 → 渲染
-  │  list_layers   ───▶ 扫描本地 + 全局缓存
-  │  search_layers ───▶ 按关键词/标签过滤
-  │  inspect_layer ───▶ 显示元数据 + 内容
-  └─────────────────────┘
-         │
-         ▼
-  ~/.prompthub/layers/   +   ./layers/
+  Claude Desktop / Cursor / Claude Code
+           │
+           │  MCP (stdio)
+           ▼
+  ╔═════════════════════════════════════════════╗
+  ║  ph-mcp                                     ║
+  ║                                             ║
+  ║  build_prompt  ──▶  解析 → 解析层           ║
+  ║                            ↓                ║
+  ║                         合并 → 渲染         ║
+  ║  list_layers   ──▶  扫描本地 + 全局缓存     ║
+  ║  search_layers ──▶  按名称/描述/标签过滤    ║
+  ║  inspect_layer ──▶  元数据 + 内容           ║
+  ╚═════════════════════════════════════════════╝
+           │
+           ▼
+  ~/.prompthub/layers/  +  ./layers/  (项目本地)
 ```
 
 ### 配置

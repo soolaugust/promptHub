@@ -4,56 +4,62 @@ A layered prompt management system inspired by Docker. Compose reusable prompt l
 
 [中文文档](README.zh.md)
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Rust](https://img.shields.io/badge/built%20with-Rust-orange.svg)
+
 ![PromptHub demo](docs/demo.gif)
 
 ```
-┌─────────────────────────────────────────────┐
-│  Promptfile                                 │
-│                                             │
-│  FROM  base/code-reviewer:v1.0             │
-│  LAYER style/concise:v1.0                  │
-│  LAYER guard/no-secrets:v1.0               │
-│  VAR   language "中文"                      │
-│  TASK  "Review this pull request."         │
-└──────────────────┬──────────────────────────┘
-                   │ ph build
-                   ▼
-┌─────────────────────────────────────────────┐
-│  Merged Prompt                              │
-│                                             │
-│  [role] You are a senior code reviewer...  │
-│  [constraints] Be concise and direct...    │
-│  [constraints] Never output secrets...     │
-│  [output-format] ## Critical Issues...     │
-│                                             │
-│  ---                                        │
-│  用中文审查这个 Pull Request。               │
-└─────────────────────────────────────────────┘
+╔═══════════════════════════════════════════════════╗
+║  Promptfile                                       ║
+║                                                   ║
+║  FROM   base/code-reviewer:v1.0                  ║
+║  LAYER  style/concise:v1.0                       ║
+║  LAYER  guard/no-secrets:v1.0                    ║
+║  VAR    language "中文"                           ║
+║  TASK   "Review this pull request."              ║
+╚══════════════════════╦════════════════════════════╝
+                       ║
+                    ph build
+                       ║
+                       ▼
+╔═══════════════════════════════════════════════════╗
+║  Merged Prompt                                    ║
+║                                                   ║
+║  [role]          You are a senior code reviewer…  ║
+║  [constraints]   Be concise and direct…           ║
+║  [constraints]   Never output secrets…            ║
+║  [output-format] ## Critical Issues…              ║
+║                                                   ║
+║  ---                                              ║
+║  用中文审查这个 Pull Request。                     ║
+╚═══════════════════════════════════════════════════╝
 ```
 
 ## How it works
 
 ```
-  layers/                     Promptfile
-  ├── base/                   ──────────────────
-  │   └── code-reviewer/      FROM  base/code-reviewer:v1.0
-  │       ├── layer.yaml      LAYER style/concise:v1.0
-  │       └── prompt.md  ──▶  LAYER guard/no-secrets:v1.0
-  ├── style/                  VAR   language "中文"
-  │   └── concise/       ──▶  TASK  "审查代码"
+  layers/                          Promptfile
+  ├── base/                        ─────────────────────────────
+  │   └── code-reviewer/           FROM  base/code-reviewer:v1.0
+  │       ├── layer.yaml    ──▶    LAYER style/concise:v1.0
+  │       └── prompt.md            LAYER guard/no-secrets:v1.0
+  ├── style/                       VAR   language "中文"
+  │   └── concise/          ──▶   TASK  "审查代码"
   └── guard/
-      └── no-secrets/    ──▶
-              │
-              │  ph build
-              ▼
-  ┌──────────────────────────────────────┐
-  │  [role]        from code-reviewer    │
-  │  [constraints] overridden by concise │  ← same section: later wins
-  │  [constraints] appended by no-secrets│  ← new section:  appended
-  │  [output-format] from code-reviewer  │
-  │  ---                                 │
-  │  审查代码                            │
-  └──────────────────────────────────────┘
+      └── no-secrets/       ──▶
+                    │
+                 ph build
+                    │
+                    ▼
+  ╔══════════════════════════════════════════════╗
+  ║  [role]          ◀ from  code-reviewer       ║
+  ║  [constraints]   ◀ overridden by  concise    ║  ← same key: later wins
+  ║  [constraints]   ◀ appended by    no-secrets ║  ← new key:  appended
+  ║  [output-format] ◀ from  code-reviewer       ║
+  ║  ─────────────────────────────────────────── ║
+  ║  审查代码                                     ║
+  ╚══════════════════════════════════════════════╝
 ```
 
 Layers merge deterministically: **same section name → later layer overrides**, **new section name → appended**. Variables (`${language}`) are substituted at build time.
@@ -75,6 +81,11 @@ cargo install --path registry/
 ```
 
 ## Quick Start
+
+```bash
+# Pull a layer from the official registry
+ph pull base/code-reviewer:v1.0
+```
 
 ```
 $ ph init
@@ -99,9 +110,6 @@ $ ph build --var language=English -o json
 ```
 
 ```bash
-# Pull a layer from the official registry
-ph pull base/code-reviewer:v1.0
-
 # List locally available layers
 ph layer list
 
@@ -249,26 +257,26 @@ For teams that need to self-host layers internally, PromptHub includes `ph-regis
 
 ```
   Developer / CI Pipeline / AI Agent
-             │
-             │  HTTPS
-             ▼
-  ┌──────────────────────────────────────────────────┐
-  │  ph-registry  (Axum HTTP server)                 │
-  │                                                  │
-  │  GET  /layers/{ns}/{name}/{ver}/layer.yaml       │
-  │  GET  /layers/{ns}/{name}/{ver}/prompt.md        │
-  │  PUT  /layers/{ns}/{name}/{ver}   (push)         │
-  │  GET  /layers?q=keyword           (search)       │
-  │  POST /v1/auth/login                             │
-  │  POST /v1/auth/token  (admin only)               │
-  │                                                  │
-  │  ┌─────────────┐  ┌───────────────────────────┐ │
-  │  │  SQLite DB  │  │  S3 / MinIO / Filesystem  │ │
-  │  │  users      │  │  layers/{ns}/{name}/{ver}/ │ │
-  │  │  tokens     │  │    layer.yaml              │ │
-  │  │  layer_meta │  │    prompt.md               │ │
-  │  └─────────────┘  └───────────────────────────┘ │
-  └──────────────────────────────────────────────────┘
+                   │
+                   │  HTTPS
+                   ▼
+  ╔══════════════════════════════════════════════════════╗
+  ║  ph-registry  (Axum · Rust)                          ║
+  ║                                                      ║
+  ║  GET  /layers/{ns}/{name}/{ver}/layer.yaml           ║
+  ║  GET  /layers/{ns}/{name}/{ver}/prompt.md            ║
+  ║  PUT  /layers/{ns}/{name}/{ver}          (push)      ║
+  ║  GET  /layers?q=keyword                  (search)    ║
+  ║  POST /v1/auth/login                                 ║
+  ║  POST /v1/auth/token                     (admin)     ║
+  ║                                                      ║
+  ║  ┌─────────────────┐     ┌──────────────────────┐   ║
+  ║  │   SQLite DB     │     │  S3 · MinIO · FS     │   ║
+  ║  │  ▸ users        │     │  layers/             │   ║
+  ║  │  ▸ tokens       │     │  └── {ns}/{name}/    │   ║
+  ║  │  ▸ layer_meta   │     │      └── {ver}/      │   ║
+  ║  └─────────────────┘     └──────────────────────┘   ║
+  ╚══════════════════════════════════════════════════════╝
 ```
 
 ### Start the registry
@@ -430,21 +438,23 @@ Global cache: `~/.prompthub/layers/`
 `ph-mcp` is an MCP (Model Context Protocol) server that lets AI assistants like Claude and Cursor use PromptHub directly — no copy-paste required.
 
 ```
-  Claude Desktop / Cursor
-         │
-         │  MCP (stdio)
-         ▼
-  ┌─────────────────────┐
-  │      ph-mcp         │
-  │                     │
-  │  build_prompt  ───▶ parse → resolve → merge → render
-  │  list_layers   ───▶ scan local + global cache
-  │  search_layers ───▶ filter by keyword/tag
-  │  inspect_layer ───▶ show metadata + content
-  └─────────────────────┘
-         │
-         ▼
-  ~/.prompthub/layers/   +   ./layers/
+  Claude Desktop / Cursor / Claude Code
+           │
+           │  MCP (stdio)
+           ▼
+  ╔═════════════════════════════════════════════╗
+  ║  ph-mcp                                     ║
+  ║                                             ║
+  ║  build_prompt  ──▶  parse → resolve         ║
+  ║                            ↓                ║
+  ║                         merge → render      ║
+  ║  list_layers   ──▶  scan local + global     ║
+  ║  search_layers ──▶  filter name/desc/tags   ║
+  ║  inspect_layer ──▶  metadata + content      ║
+  ╚═════════════════════════════════════════════╝
+           │
+           ▼
+  ~/.prompthub/layers/  +  ./layers/  (project-local)
 ```
 
 ### Setup
@@ -501,6 +511,15 @@ Result: [role] 你是一位资深代码审查专家... [constraints] 保持简�
         ---
         用中文审查这个 Pull Request。
 ```
+
+## Works Well With
+
+| Tool | How |
+|------|-----|
+| [Claude Code](https://github.com/anthropics/claude-code) | Use `ph-mcp` as an MCP server; define skill system prompts as Promptfiles |
+| [Cursor](https://cursor.com) | Use `ph-mcp` as an MCP server |
+| Any CI/CD pipeline | `ph build -o json` outputs structured prompt + model params |
+| Private team registries | `ph push` / `ph pull` for versioned, shared layers |
 
 ## Other Commands
 
