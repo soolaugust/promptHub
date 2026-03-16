@@ -306,6 +306,19 @@ mod tests {
     }
 
     #[test]
+    fn test_self_conflict_not_triggered() {
+        // A layer that lists its own full_name in conflicts should not cause
+        // a ConflictError — the check explicitly skips pairs where i == j.
+        let base = make_layer("writer", "base", vec![
+            ("role", "You are a writer."),
+        ], vec!["base/writer"]); // conflicts with itself (unusual but must not error)
+
+        let result = merge_layers(&base, &[], HashMap::new());
+        assert!(result.is_ok(),
+            "a layer conflicting with itself should not raise ConflictError, got: {:?}", result);
+    }
+
+    #[test]
     fn test_merge_params_are_threaded_through() {
         // Params passed to merge_layers should be accessible unchanged on the result.
         let base = make_layer("reviewer", "base", vec![

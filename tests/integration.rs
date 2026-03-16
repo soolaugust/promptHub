@@ -407,3 +407,90 @@ fn test_additional_layer_declares_conflict() {
     assert!(result.is_err(),
         "conflict declared by additional layer should also be detected");
 }
+
+// ── Test 11: PARAM directives are threaded into merged result ─────────────────
+
+#[test]
+fn test_param_directives_in_promptfile() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    create_layer(&layers_dir, "base", "assistant", "v1.0", &[
+        ("role", "You are a helpful assistant."),
+    ], &[]);
+
+    create_promptfile(tmp.path(),
+        "FROM base/assistant:v1.0\nPARAM model \"claude-sonnet-4-6\"\nPARAM temperature \"0.3\"\n"
+    );
+
+    let pf_content = fs::read_to_string(tmp.path().join("Promptfile")).unwrap();
+    let pf = prompthub::parser::parse(&pf_content).unwrap();
+
+    // Params should be parsed from Promptfile
+    assert_eq!(pf.params.get("model").map(String::as_str), Some("claude-sonnet-4-6"),
+        "PARAM model should be parsed from Promptfile");
+    assert_eq!(pf.params.get("temperature").map(String::as_str), Some("0.3"),
+        "PARAM temperature should be parsed from Promptfile");
+
+    // Params should be preserved through merge
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base = resolver.resolve(&pf.from).unwrap();
+    let merged = prompthub::merger::merge_layers(&base, &[], pf.params.clone()).unwrap();
+
+    assert_eq!(merged.params.get("model").map(String::as_str), Some("claude-sonnet-4-6"),
+        "model param should survive merge");
+    assert_eq!(merged.params.get("temperature").map(String::as_str), Some("0.3"),
+        "temperature param should survive merge");
+}
+
+// ── Test 12: FROM with path-traversal is rejected ─────────────────────────────
+
+#[test]
+fn test_from_path_traversal_rejected() {
+    // A Promptfile referencing a layer via path traversal should be rejected
+    // by the parser before any filesystem access occurs.
+    let pf_content = "FROM ../evil/layer:v1.0\n";
+    let result = prompthub::parser::parse(pf_content);
+    assert!(result.is_err(),
+        "FROM with path-traversal component should be a parse error");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(err_msg.contains("invalid") || err_msg.contains("..") || err_msg.contains("path"),
+        "error message should indicate path traversal issue, got: {}", err_msg);
+}
+
+// ── Test 13: VAR override via parse_var_override matches Promptfile VAR ───────
+
+#[test]
+fn test_var_override_overrides_promptfile_var() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    create_layer(&layers_dir, "base", "translator", "v1.0", &[
+        ("role", "Translate to ${target_lang}."),
+    ], &[]);
+
+    // Promptfile sets target_lang = "French"
+    let pf_content = "FROM base/translator:v1.0\nVAR target_lang \"French\"\n";
+    let mut pf = prompthub::parser::parse(pf_content).unwrap();
+
+    // CLI-style override changes target_lang to "German"
+    let (name, value) = prompthub::parser::parse_var_override("target_lang=German").unwrap();
+    pf.vars.insert(name, value);
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base = resolver.resolve(&pf.from).unwrap();
+    let merged = prompthub::merger::merge_layers(&base, &[], HashMap::new()).unwrap();
+
+    let (text, undef) = prompthub::renderer::render_variables(
+        &merged,
+        &pf.vars,
+        None,
+        &[],
+    ).unwrap();
+
+    assert!(undef.is_empty(), "no undefined vars expected");
+    assert!(text.contains("Translate to German."),
+        "CLI override should replace Promptfile VAR value; got: {}", text);
+    assert!(!text.contains("French"),
+        "Promptfile default should be replaced by CLI override; got: {}", text);
+}
