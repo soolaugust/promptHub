@@ -75,7 +75,18 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
         })?;
     }
 
-    eprintln!("✓ Pulled {} to {}", layer_ref.display(), dest_dir.display());
+    let display_path = if let Some(home) = dirs::home_dir() {
+        let p = dest_dir.display().to_string();
+        let h = home.display().to_string();
+        if p.starts_with(&h) {
+            format!("~{}", &p[h.len()..])
+        } else {
+            p
+        }
+    } else {
+        dest_dir.display().to_string()
+    };
+    eprintln!("✓ Pulled {} to {}", layer_ref.display(), display_path);
     Ok(dest_dir)
 }
 
