@@ -1,6 +1,6 @@
 use crate::error::{PromptHubError, Result};
 use crate::merger::MergedPrompt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 use regex::Regex;
@@ -13,6 +13,9 @@ fn var_regex() -> &'static Regex {
 
 /// Render variables in merged prompt content.
 /// Returns `(rendered_text, undefined_var_warnings)`.
+///
+/// Each undefined variable name is reported at most once regardless of how many
+/// times it appears across the prompt body and the TASK directive.
 pub fn render_variables(
     merged: &MergedPrompt,
     vars: &HashMap<String, String>,
@@ -20,6 +23,7 @@ pub fn render_variables(
     includes: &[(std::path::PathBuf, String)],
 ) -> Result<(String, Vec<String>)> {
     let mut text = merged.to_text();
+    let mut seen_undef: HashSet<String> = HashSet::new();
     let mut undef_warnings: Vec<String> = Vec::new();
 
     // Process INCLUDE content (append each included file)
@@ -31,14 +35,22 @@ pub fn render_variables(
     // Substitute ${var_name} placeholders
     let (substituted, body_warns) = substitute_vars(&text, vars)?;
     text = substituted;
-    undef_warnings.extend(body_warns);
+    for name in body_warns {
+        if seen_undef.insert(name.clone()) {
+            undef_warnings.push(name);
+        }
+    }
 
     // Append TASK at the end
     if let Some(task_text) = task {
         let (rendered_task, task_warns) = substitute_vars(task_text, vars)?;
-        undef_warnings.extend(task_warns);
         text.push_str("\n\n---\n\n");
         text.push_str(&rendered_task);
+        for name in task_warns {
+            if seen_undef.insert(name.clone()) {
+                undef_warnings.push(name);
+            }
+        }
     }
 
     Ok((text, undef_warnings))
@@ -246,5 +258,33 @@ mod tests {
         assert!(text.contains("${language}"), "undefined var kept in task");
         assert_eq!(undef, vec!["language".to_string()],
             "undefined var in task should be reported");
+    }
+
+    #[test]
+    fn test_render_variables_dedup_undef_across_body_and_task() {
+        // If the same variable is undefined in both body and task, it should only
+        // appear once in the returned warnings list.
+        use crate::merger::MergedPrompt;
+        use std::collections::HashMap;
+
+        let mut sections = HashMap::new();
+        sections.insert("role".to_string(), "Answer in ${language}.".to_string());
+        let merged = MergedPrompt {
+            sections,
+            section_order: vec!["role".to_string()],
+            params: HashMap::new(),
+            warnings: Vec::new(),
+        };
+
+        let vars = HashMap::new();
+        let task = Some("Respond in ${language}.");
+
+        let (_text, undef) = render_variables(&merged, &vars, task, &[]).unwrap();
+
+        assert_eq!(
+            undef,
+            vec!["language".to_string()],
+            "same undefined var used in both body and task should be reported only once"
+        );
     }
 }

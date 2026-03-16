@@ -16,35 +16,47 @@ pub struct MergedPrompt {
 }
 
 impl MergedPrompt {
-    /// Render merged sections to a single string
+    /// Render merged sections to a single string.
+    /// Sections are emitted in `section_order` order, then any remaining
+    /// sections in sorted order.  Empty sections are skipped.
     pub fn to_text(&self) -> String {
-        let mut parts = Vec::new();
-        let mut written = HashSet::new();
+        // Pre-allocate a reasonable capacity to reduce reallocations.
+        let total_content_bytes: usize = self.sections.values().map(|v| v.len()).sum();
+        let mut output = String::with_capacity(total_content_bytes + self.sections.len() * 2);
+        let mut written: HashSet<&String> = HashSet::with_capacity(self.sections.len());
 
-        // Write in defined order
+        let sep = "\n\n";
+
+        // Emit in declared order first.
         for name in &self.section_order {
             if let Some(content) = self.sections.get(name) {
                 if !content.is_empty() {
-                    parts.push(content.clone());
-                    written.insert(name.clone());
+                    if !output.is_empty() {
+                        output.push_str(sep);
+                    }
+                    output.push_str(content);
+                    written.insert(name);
                 }
             }
         }
 
-        // Write remaining sections (not in order list)
+        // Emit remaining sections (undeclared) in sorted order for determinism.
         let mut remaining: Vec<&String> = self.sections.keys()
-            .filter(|k| !written.contains(*k))
+            .filter(|k| !written.contains(k))
             .collect();
         remaining.sort();
         for name in remaining {
             if let Some(content) = self.sections.get(name) {
                 if !content.is_empty() {
-                    parts.push(content.clone());
+                    if !output.is_empty() {
+                        output.push_str(sep);
+                    }
+                    output.push_str(content);
                 }
             }
         }
 
-        parts.join("\n\n")
+        output
     }
 }
 

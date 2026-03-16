@@ -57,8 +57,16 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
     Ok(dest_dir)
 }
 
+/// Default HTTP request timeout (30 seconds).
+const FETCH_TIMEOUT_SECS: u64 = 30;
+
 fn fetch_url(url: &str) -> Result<String> {
-    let response = reqwest::blocking::get(url).map_err(PromptHubError::Network)?;
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(PromptHubError::Network)?;
+
+    let response = client.get(url).send().map_err(PromptHubError::Network)?;
 
     if !response.status().is_success() {
         return Err(PromptHubError::Other(

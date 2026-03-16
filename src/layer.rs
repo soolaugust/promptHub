@@ -35,6 +35,12 @@ pub struct Layer {
     pub sections: HashMap<String, String>,
 }
 
+impl std::fmt::Display for Layer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.full_name(), self.meta.version)
+    }
+}
+
 impl Layer {
     /// Load a layer from a directory containing layer.yaml and prompt.md
     pub fn load_from_dir(dir: &Path) -> crate::error::Result<Self> {
@@ -224,6 +230,56 @@ Use markdown."#;
         assert_eq!(sections["role"], "Second definition.");
         assert_eq!(warnings.len(), 1, "one duplicate warning expected");
         assert!(warnings[0].contains("role"), "warning should mention section name");
+    }
+
+    #[test]
+    fn test_layer_display() {
+        use crate::layer::LayerMeta;
+        let meta = LayerMeta {
+            name: "code-reviewer".to_string(),
+            namespace: "base".to_string(),
+            version: "v1.2".to_string(),
+            description: String::new(),
+            author: String::new(),
+            tags: Vec::new(),
+            sections: Vec::new(),
+            conflicts: Vec::new(),
+            requires: Vec::new(),
+            models: Vec::new(),
+        };
+        let layer = Layer {
+            meta,
+            content: String::new(),
+            sections: HashMap::new(),
+        };
+        let displayed = format!("{}", layer);
+        assert_eq!(displayed, "base/code-reviewer (v1.2)",
+            "Display should show full_name and version");
+    }
+
+    #[test]
+    fn test_layer_display_no_namespace() {
+        use crate::layer::LayerMeta;
+        let meta = LayerMeta {
+            name: "my-layer".to_string(),
+            namespace: String::new(),
+            version: "v2.0".to_string(),
+            description: String::new(),
+            author: String::new(),
+            tags: Vec::new(),
+            sections: Vec::new(),
+            conflicts: Vec::new(),
+            requires: Vec::new(),
+            models: Vec::new(),
+        };
+        let layer = Layer {
+            meta,
+            content: String::new(),
+            sections: HashMap::new(),
+        };
+        let displayed = format!("{}", layer);
+        assert_eq!(displayed, "my-layer (v2.0)",
+            "Display without namespace should omit namespace prefix");
     }
 
     #[test]
