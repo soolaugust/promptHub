@@ -229,4 +229,19 @@ models: []
         let names: Vec<&str> = layers.iter().map(|(n, _)| n.as_str()).collect();
         assert!(names.contains(&"base/code-reviewer/v1.0"));
     }
+
+    #[test]
+    fn test_resolve_major_version() {
+        let tmp = TempDir::new().unwrap();
+        create_test_layer(tmp.path(), "code-reviewer", "base", "v1.0");
+        create_test_layer(tmp.path(), "code-reviewer", "base", "v1.1");
+        create_test_layer(tmp.path(), "code-reviewer", "base", "v2.0");
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        // "v1" should match v1.0 and v1.1 but not v2.0, returning v1.1 as latest
+        let layer_ref = LayerRef { source: "base/code-reviewer".to_string(), version: "v1".to_string() };
+        let layer = resolver.resolve(&layer_ref).unwrap();
+        assert_eq!(layer.meta.version, "v1.1",
+            "major version 'v1' should resolve to latest v1.x, not v2.0");
+    }
 }

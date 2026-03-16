@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Metadata stored in layer.yaml
@@ -45,7 +45,10 @@ impl Layer {
             .map_err(|e| crate::error::PromptHubError::Other(
                 format!("Cannot read {}: {}", yaml_path.display(), e)
             ))?;
-        let meta: LayerMeta = serde_yaml::from_str(&yaml_content)?;
+        let meta: LayerMeta = serde_yaml::from_str(&yaml_content)
+            .map_err(|e| crate::error::PromptHubError::Other(
+                format!("Cannot parse {}: {}", yaml_path.display(), e)
+            ))?;
 
         let content = if prompt_path.exists() {
             std::fs::read_to_string(&prompt_path)
@@ -131,8 +134,9 @@ pub fn sections_to_content(sections: &HashMap<String, String>, order: &[String])
     }
 
     // Then write any remaining sections not in the order list
+    let order_set: HashSet<&String> = order.iter().collect();
     let mut remaining: Vec<&String> = sections.keys()
-        .filter(|k| !order.contains(k))
+        .filter(|k| !order_set.contains(*k))
         .collect();
     remaining.sort();
     for section_name in remaining {

@@ -26,7 +26,13 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
     eprintln!("Pulling {} from {}...", layer_ref.display(), source.name);
 
     let yaml_content = fetch_url(&yaml_url)?;
-    let prompt_content = fetch_url(&prompt_url).unwrap_or_default();
+    let prompt_content = match fetch_url(&prompt_url) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: could not fetch prompt.md for {} ({}); layer will have no prompt content", layer_ref.display(), e);
+            String::new()
+        }
+    };
 
     // Save to cache
     let dest_dir = global_layers_dir()

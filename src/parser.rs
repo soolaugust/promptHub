@@ -79,10 +79,6 @@ fn parse_instructions(content: &str) -> crate::error::Result<Vec<Instruction>> {
         }
 
         let parts: Vec<&str> = line.splitn(2, ' ').collect();
-        if parts.is_empty() {
-            continue;
-        }
-
         let directive = parts[0].to_uppercase();
         let rest = if parts.len() > 1 { parts[1].trim() } else { "" };
 
@@ -147,16 +143,21 @@ fn parse_key_value(rest: &str, line_num: usize) -> crate::error::Result<(String,
 
 fn parse_quoted_string(s: &str, line_num: usize) -> crate::error::Result<String> {
     let s = s.trim();
-    // Strip surrounding quotes (double or single)
-    if (s.starts_with('"') && s.ends_with('"')) ||
-       (s.starts_with('\'') && s.ends_with('\'')) {
+    // Strip surrounding matching quotes (double or single)
+    if (s.starts_with('"') && s.ends_with('"') && s.len() >= 2) ||
+       (s.starts_with('\'') && s.ends_with('\'') && s.len() >= 2) {
         Ok(s[1..s.len()-1].to_string())
+    } else if s.starts_with('"') || s.starts_with('\'') {
+        // Opening quote without matching closing quote
+        Err(crate::error::PromptHubError::ParseError(
+            format!("Line {}: Mismatched quote in: {:?}", line_num, s)
+        ))
     } else if !s.is_empty() {
         // Allow unquoted values
         Ok(s.to_string())
     } else {
         Err(crate::error::PromptHubError::ParseError(
-            format!("Line {}: Expected quoted string, got: {:?}", line_num, s)
+            format!("Line {}: Expected a value", line_num)
         ))
     }
 }
@@ -263,5 +264,21 @@ LAYER guard/fact-check:v1.0
         let pf = parse(content).unwrap();
         assert_eq!(pf.includes.len(), 1);
         assert_eq!(pf.includes[0], std::path::PathBuf::from("./context.md"));
+    }
+
+    #[test]
+    fn test_parse_mismatched_quote_fails() {
+        // Opening double-quote without closing quote should be a parse error
+        let content = "FROM base/writer:v1.0\nVAR lang \"español\n";
+        assert!(parse(content).is_err(), "mismatched quote should produce a parse error");
+    }
+
+    #[test]
+    fn test_parse_unknown_directive_error_lists_valid() {
+        let content = "FROM base/writer:v1.0\nFILTER something\n";
+        let err = parse(content).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("FROM") && msg.contains("LAYER"),
+            "error message should list valid directives, got: {}", msg);
     }
 }
