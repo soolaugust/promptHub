@@ -1,0 +1,32 @@
+services:
+  registry:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./registry.example.yaml:/etc/prompthub/registry.yaml
+      - registry-data:/data
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+    volumes:
+      - minio-data:/data
+    command: server /data
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    healthcheck:
+      # Use wget — curl is not present in the MinIO minimal image
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  registry-data:
+  minio-data:

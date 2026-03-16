@@ -1,0 +1,26 @@
+server:
+  port: 8080
+  read_only: false
+
+storage:
+  # Option A: S3 / MinIO (production)
+  type: s3
+  endpoint: http://minio:9000
+  bucket: prompthub-layers
+  access_key: minioadmin
+  secret_key: minioadmin
+  region: us-east-1
+
+  # Option B: local filesystem (development / small teams)
+  # type: filesystem
+  # path: /var/lib/prompthub/layers
+
+database:
+  path: /data/registry.db
+
+auth:
+  pull_requires_auth: false
+  admin_token: "phrt_CHANGE_ME"   # rotate immediately after first deploy
+
+log:
+  level: info
