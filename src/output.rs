@@ -36,16 +36,7 @@ pub fn output_result(
             println!("{}", text);
         }
         OutputFormat::Json => {
-            let digest = compute_digest(text, layers);
-            let output = BuildOutput {
-                prompt: text.to_string(),
-                params: params.clone(),
-                meta: BuildMeta {
-                    layers: layers.to_vec(),
-                    digest,
-                    warnings: warnings.to_vec(),
-                },
-            };
+            let output = build_output(text, params, layers, warnings);
             println!("{}", serde_json::to_string_pretty(&output)?);
         }
         OutputFormat::Clipboard => {
@@ -56,9 +47,29 @@ pub fn output_result(
     Ok(())
 }
 
+/// Build a `BuildOutput` value without printing it.
+/// Useful for testing and for callers that want the structured data.
+pub fn build_output(
+    text: &str,
+    params: &HashMap<String, String>,
+    layers: &[String],
+    warnings: &[String],
+) -> BuildOutput {
+    let digest = compute_digest(text, layers);
+    BuildOutput {
+        prompt: text.to_string(),
+        params: params.clone(),
+        meta: BuildMeta {
+            layers: layers.to_vec(),
+            digest,
+            warnings: warnings.to_vec(),
+        },
+    }
+}
+
 /// Compute a short digest over prompt text and layer names so that two builds
 /// with different layer sets (but identical rendered text) produce different digests.
-fn compute_digest(text: &str, layers: &[String]) -> String {
+pub(crate) fn compute_digest(text: &str, layers: &[String]) -> String {
     use sha2::{Sha256, Digest};
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
@@ -108,5 +119,48 @@ mod tests {
         let d = compute_digest("test", &[]);
         assert_eq!(d.len(), 16, "digest should be 8 bytes = 16 hex chars");
         assert!(d.chars().all(|c| c.is_ascii_hexdigit()), "digest should be hex");
+    }
+
+    #[test]
+    fn test_build_output_fields() {
+        let mut params = HashMap::new();
+        params.insert("model".to_string(), "gpt-4".to_string());
+        let layers = vec!["base/reviewer:v1.0".to_string()];
+        let warnings = vec!["Section 'constraints' overridden".to_string()];
+
+        let out = build_output("Hello prompt", &params, &layers, &warnings);
+
+        assert_eq!(out.prompt, "Hello prompt");
+        assert_eq!(out.params.get("model").unwrap(), "gpt-4");
+        assert_eq!(out.meta.layers, layers);
+        assert_eq!(out.meta.warnings, warnings);
+        assert!(!out.meta.digest.is_empty(), "digest should be populated");
+    }
+
+    #[test]
+    fn test_build_output_json_is_valid() {
+        let params = HashMap::new();
+        let layers = vec!["base/writer:v1.0".to_string()];
+        let out = build_output("Prompt text.", &params, &layers, &[]);
+
+        // Should serialize and deserialize without loss
+        let json = serde_json::to_string(&out).expect("serialization should succeed");
+        let decoded: BuildOutput = serde_json::from_str(&json).expect("deserialization should succeed");
+
+        assert_eq!(decoded.prompt, "Prompt text.");
+        assert_eq!(decoded.meta.layers, layers);
+        assert_eq!(decoded.meta.digest, out.meta.digest);
+    }
+
+    #[test]
+    fn test_build_output_digest_changes_with_content() {
+        let params = HashMap::new();
+        let layers = vec!["base/reviewer:v1.0".to_string()];
+
+        let out1 = build_output("Content A", &params, &layers, &[]);
+        let out2 = build_output("Content B", &params, &layers, &[]);
+
+        assert_ne!(out1.meta.digest, out2.meta.digest,
+            "different prompt text should produce different digests");
     }
 }

@@ -308,3 +308,102 @@ fn test_undefined_var_warning_returned() {
     assert_eq!(undef, vec!["missing_var".to_string()],
         "undefined variable name should be reported in the warnings list");
 }
+
+// ── Test 9: Three-layer merge (base + 2 additional) ───────────────────────────
+
+#[test]
+fn test_three_layer_merge() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    // Base layer has role and constraints
+    create_layer(&layers_dir, "base", "writer", "v1.0", &[
+        ("role", "You are a professional writer."),
+        ("constraints", "Write clearly."),
+        ("output-format", "Use paragraphs."),
+    ], &[]);
+
+    // Style layer overrides constraints
+    create_layer(&layers_dir, "style", "concise", "v1.0", &[
+        ("constraints", "Be very concise. Under 50 words."),
+    ], &[]);
+
+    // Language layer adds a new section
+    create_layer(&layers_dir, "lang", "spanish", "v1.0", &[
+        ("language", "Respond in Spanish."),
+    ], &[]);
+
+    let pf_content = "FROM base/writer:v1.0\nLAYER style/concise:v1.0\nLAYER lang/spanish:v1.0\n";
+    let pf = prompthub::parser::parse(pf_content).unwrap();
+    assert_eq!(pf.layers.len(), 2, "should have 2 additional layers");
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base = resolver.resolve(&pf.from).unwrap();
+    let layer2 = resolver.resolve(&pf.layers[0]).unwrap();
+    let layer3 = resolver.resolve(&pf.layers[1]).unwrap();
+
+    let merged = prompthub::merger::merge_layers(&base, &[layer2, layer3], HashMap::new()).unwrap();
+
+    // Constraints overridden by style/concise
+    assert_eq!(merged.sections["constraints"], "Be very concise. Under 50 words.",
+        "constraints should be overridden by second layer");
+
+    // Role preserved from base
+    assert!(merged.sections["role"].contains("professional writer"),
+        "role section should be preserved from base layer");
+
+    // Language added by third layer
+    assert_eq!(merged.sections["language"], "Respond in Spanish.",
+        "language section should be added by third layer");
+
+    // Output-format preserved from base
+    assert!(merged.sections["output-format"].contains("paragraphs"),
+        "output-format section should be preserved from base layer");
+
+    // Exactly one override warning (for constraints)
+    assert_eq!(merged.warnings.len(), 1,
+        "should have exactly one override warning");
+    assert!(merged.warnings[0].contains("constraints"),
+        "warning should mention the overridden section");
+
+    // Full text should contain all non-overridden content
+    let text = merged.to_text();
+    assert!(text.contains("professional writer"), "role in text");
+    assert!(text.contains("Under 50 words"), "overridden constraints in text");
+    assert!(text.contains("Spanish"), "language section in text");
+}
+
+// ── Test 10: Additional layer conflict declaration ─────────────────────────────
+
+#[test]
+fn test_additional_layer_declares_conflict() {
+    let tmp = TempDir::new().unwrap();
+    let layers_dir = tmp.path().join("layers");
+
+    // The *additional* layer declares a conflict with the base layer.
+    create_layer(&layers_dir, "base", "writer", "v1.0", &[
+        ("role", "You are a writer."),
+    ], &[]);
+
+    // translator declares it conflicts with writer
+    create_layer(&layers_dir, "base", "translator", "v1.0", &[
+        ("role", "You are a translator."),
+    ], &["base/writer"]);
+
+    let resolver = prompthub::resolver::LayerResolver::new(vec![layers_dir]);
+    let base_ref = prompthub::parser::LayerRef {
+        source: "base/writer".to_string(),
+        version: "v1.0".to_string(),
+    };
+    let extra_ref = prompthub::parser::LayerRef {
+        source: "base/translator".to_string(),
+        version: "v1.0".to_string(),
+    };
+
+    let base = resolver.resolve(&base_ref).unwrap();
+    let extra = resolver.resolve(&extra_ref).unwrap();
+
+    let result = prompthub::merger::merge_layers(&base, &[extra], HashMap::new());
+    assert!(result.is_err(),
+        "conflict declared by additional layer should also be detected");
+}
