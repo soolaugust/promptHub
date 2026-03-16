@@ -19,7 +19,7 @@ impl MergedPrompt {
     /// Render merged sections to a single string
     pub fn to_text(&self) -> String {
         let mut parts = Vec::new();
-        let mut written = std::collections::HashSet::new();
+        let mut written = HashSet::new();
 
         // Write in defined order
         for name in &self.section_order {
@@ -234,6 +234,30 @@ mod tests {
         let output_pos = text.find("Output format.").unwrap();
         assert!(role_pos < constraints_pos);
         assert!(constraints_pos < output_pos);
+    }
+
+    #[test]
+    fn test_additional_layer_sections_in_declared_order() {
+        // Sections from an additional layer should appear in the order declared
+        // in that layer's meta.sections, not HashMap iteration order.
+        let base = make_layer("reviewer", "base", vec![
+            ("role", "Base role."),
+        ], vec![]);
+        // extra layer declares sections in alpha-reverse order: z, m, a
+        let extra = make_layer("extra", "style", vec![
+            ("z-section", "Z content."),
+            ("m-section", "M content."),
+            ("a-section", "A content."),
+        ], vec![]);
+
+        let result = merge_layers(&base, &[extra], HashMap::new()).unwrap();
+        let text = result.to_text();
+        let z_pos = text.find("Z content.").unwrap();
+        let m_pos = text.find("M content.").unwrap();
+        let a_pos = text.find("A content.").unwrap();
+        // Declared order is z, m, a — so z must appear before m, m before a
+        assert!(z_pos < m_pos, "z-section should appear before m-section");
+        assert!(m_pos < a_pos, "m-section should appear before a-section");
     }
 
     #[test]

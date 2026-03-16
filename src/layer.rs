@@ -59,7 +59,10 @@ impl Layer {
             String::new()
         };
 
-        let sections = parse_sections(&content);
+        let (sections, dup_warnings) = parse_sections(&content);
+        for w in &dup_warnings {
+            eprintln!("Warning ({}): {}", prompt_path.display(), w);
+        }
 
         Ok(Layer { meta, content, sections })
     }
@@ -74,9 +77,12 @@ impl Layer {
     }
 }
 
-/// Parse [section-name] blocks from prompt.md content
-pub fn parse_sections(content: &str) -> HashMap<String, String> {
+/// Parse [section-name] blocks from prompt.md content.
+/// Returns `(sections_map, duplicate_warnings)`.  When the same section header
+/// appears more than once the last occurrence wins and a warning is recorded.
+pub fn parse_sections(content: &str) -> (HashMap<String, String>, Vec<String>) {
     let mut sections = HashMap::new();
+    let mut warnings = Vec::new();
     let mut current_section: Option<String> = None;
     let mut current_content = String::new();
 
@@ -84,6 +90,12 @@ pub fn parse_sections(content: &str) -> HashMap<String, String> {
         if let Some(section_name) = parse_section_header(line) {
             // Save previous section
             if let Some(name) = current_section.take() {
+                if sections.contains_key(&name) {
+                    warnings.push(format!(
+                        "Duplicate section '[{}]' in prompt.md; later definition wins",
+                        name
+                    ));
+                }
                 sections.insert(name, current_content.trim().to_string());
                 current_content.clear();
             }
@@ -96,10 +108,16 @@ pub fn parse_sections(content: &str) -> HashMap<String, String> {
 
     // Save the last section
     if let Some(name) = current_section {
+        if sections.contains_key(&name) {
+            warnings.push(format!(
+                "Duplicate section '[{}]' in prompt.md; later definition wins",
+                name
+            ));
+        }
         sections.insert(name, current_content.trim().to_string());
     }
 
-    sections
+    (sections, warnings)
 }
 
 /// Maximum allowed length (in bytes) for a section header name.
@@ -163,8 +181,9 @@ You are an expert.
 
 [output-format]
 Use markdown."#;
-        let sections = parse_sections(content);
+        let (sections, warnings) = parse_sections(content);
         assert_eq!(sections.len(), 3);
+        assert!(warnings.is_empty());
         assert!(sections.contains_key("role"));
         assert!(sections.contains_key("constraints"));
         assert!(sections.contains_key("output-format"));
@@ -195,6 +214,16 @@ Use markdown."#;
         let role_pos = content.find("[role]").unwrap();
         let constraints_pos = content.find("[constraints]").unwrap();
         assert!(role_pos < constraints_pos);
+    }
+
+    #[test]
+    fn test_parse_sections_duplicate_warning() {
+        let content = "[role]\nFirst definition.\n\n[role]\nSecond definition.\n";
+        let (sections, warnings) = parse_sections(content);
+        // Last occurrence wins
+        assert_eq!(sections["role"], "Second definition.");
+        assert_eq!(warnings.len(), 1, "one duplicate warning expected");
+        assert!(warnings[0].contains("role"), "warning should mention section name");
     }
 
     #[test]
