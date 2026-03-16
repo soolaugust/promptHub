@@ -1,0 +1,17 @@
+server:
+  port: 8080
+  read_only: false
+
+storage:
+  type: filesystem
+  path: /data/layers
+
+database:
+  path: /data/registry.db
+
+auth:
+  pull_requires_auth: false
+  admin_token: "phrt_demo_readonly_changeme"
+
+log:
+  level: info
