@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          # 读取当前版本
+          CURRENT=$(grep '^version' prompthub/Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          echo "Current version: $CURRENT"
+
+          # patch +1
+          MAJOR=$(echo $CURRENT | cut -d. -f1)
+          MINOR=$(echo $CURRENT | cut -d. -f2)
+          PATCH=$(echo $CURRENT | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # 写回 prompthub/Cargo.toml
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" prompthub/Cargo.toml
+
+          # 写回 registry/Cargo.toml (version 字段)
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" registry/Cargo.toml
+
+          # 替换 registry 中的 path 依赖为版本依赖
+          sed -i 's|prompthub = { path = "../prompthub" }|prompthub = "'"$NEW_VERSION"'"|' registry/Cargo.toml
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          git add prompthub/Cargo.toml registry/Cargo.toml
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
+          git push origin HEAD:main
+
+      - name: Publish prompthub
+        run: cargo publish -p prompthub
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Wait for crates.io indexing
+        run: sleep 30
+
+      - name: Publish ph-registry
+        run: cargo publish -p ph-registry
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Restore path dependency and push
+        run: |
+          sed -i 's|prompthub = ".*"|prompthub = { path = "../prompthub" }|' registry/Cargo.toml
+          git add registry/Cargo.toml
+          git commit -m "chore: restore path dependency after release"
+          git push origin HEAD:main
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
