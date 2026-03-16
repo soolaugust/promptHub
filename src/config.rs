@@ -121,6 +121,46 @@ sources:
         let yaml = "sources: [invalid: yaml: here\n";
         assert!(Config::from_yaml(yaml).is_err(), "malformed YAML should produce an error");
     }
+
+    #[test]
+    fn test_save_and_load_roundtrip() {
+        use tempfile::TempDir;
+
+        // Build a config with a custom source
+        let cfg = Config {
+            sources: vec![
+                Source {
+                    name: "custom".to_string(),
+                    url: "https://custom.example.com/layers".to_string(),
+                    default: true,
+                },
+                Source {
+                    name: "mirror".to_string(),
+                    url: "https://mirror.example.com/layers".to_string(),
+                    default: false,
+                },
+            ],
+        };
+
+        // Serialize to YAML and round-trip through from_yaml
+        let yaml = serde_yaml::to_string(&cfg).expect("serialization must succeed");
+        let loaded = Config::from_yaml(&yaml).expect("deserialization must succeed");
+
+        assert_eq!(loaded.sources.len(), 2, "both sources should survive roundtrip");
+        assert_eq!(loaded.sources[0].name, "custom");
+        assert_eq!(loaded.sources[0].url, "https://custom.example.com/layers");
+        assert!(loaded.sources[0].default, "default flag should survive roundtrip");
+        assert_eq!(loaded.sources[1].name, "mirror");
+        assert!(!loaded.sources[1].default, "non-default flag should survive roundtrip");
+
+        // Also verify that writing to disk and reading back produces identical content
+        let tmp = TempDir::new().expect("tmpdir creation must succeed");
+        let file_path = tmp.path().join("config.yaml");
+        std::fs::write(&file_path, &yaml).expect("write must succeed");
+        let from_disk = std::fs::read_to_string(&file_path).expect("read must succeed");
+        let loaded_from_disk = Config::from_yaml(&from_disk).expect("parse from disk must succeed");
+        assert_eq!(loaded_from_disk.sources.len(), 2, "disk roundtrip must preserve source count");
+    }
 }
 
 /// Returns ~/.prompthub/

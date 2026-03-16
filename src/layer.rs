@@ -311,6 +311,29 @@ Use markdown."#;
     }
 
     #[test]
+    fn test_sections_to_content_remaining_sections_sorted() {
+        // Sections not in the order list should be appended at the end, sorted
+        // alphabetically, so the output is deterministic.
+        let mut sections = HashMap::new();
+        sections.insert("role".to_string(), "Role content.".to_string());
+        sections.insert("zebra".to_string(), "Zebra content.".to_string());
+        sections.insert("alpha".to_string(), "Alpha content.".to_string());
+
+        // order only mentions "role"; "zebra" and "alpha" are remainders
+        let order = vec!["role".to_string()];
+        let content = sections_to_content(&sections, &order);
+
+        // "role" appears first (in-order section)
+        let role_pos = content.find("Role content.").expect("role section missing");
+        // remaining sections: alpha before zebra (sorted)
+        let alpha_pos = content.find("Alpha content.").expect("alpha section missing");
+        let zebra_pos = content.find("Zebra content.").expect("zebra section missing");
+
+        assert!(role_pos < alpha_pos, "in-order section should precede remaining sections");
+        assert!(alpha_pos < zebra_pos, "remaining sections should be sorted alphabetically");
+    }
+
+    #[test]
     fn test_load_from_dir_missing_name_errors() {
         use tempfile::TempDir;
 

@@ -306,6 +306,26 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_params_are_threaded_through() {
+        // Params passed to merge_layers should be accessible unchanged on the result.
+        let base = make_layer("reviewer", "base", vec![
+            ("role", "You are a reviewer."),
+        ], vec![]);
+
+        let mut params = HashMap::new();
+        params.insert("model".to_string(), "claude-sonnet-4-6".to_string());
+        params.insert("temperature".to_string(), "0.3".to_string());
+
+        let result = merge_layers(&base, &[], params.clone()).unwrap();
+
+        assert_eq!(result.params.get("model").map(String::as_str), Some("claude-sonnet-4-6"),
+            "model param should be preserved in merged result");
+        assert_eq!(result.params.get("temperature").map(String::as_str), Some("0.3"),
+            "temperature param should be preserved in merged result");
+        assert_eq!(result.params.len(), 2, "no extra params should be injected");
+    }
+
+    #[test]
     fn test_to_text_skips_empty_sections() {
         // Sections with empty content should not appear in the rendered text.
         let base = make_layer("test", "base", vec![

@@ -260,14 +260,12 @@ fn cmd_layer_validate(name: &str) -> anyhow::Result<()> {
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
 
-    if l.meta.name.is_empty() {
-        errors.push("name is required".to_string());
-    }
+    // Note: name and version emptiness are already enforced by Layer::load_from_dir
+    // (which returns a ValidationError before reaching this point), so those checks
+    // are not duplicated here.
+
     if l.meta.namespace.is_empty() {
         warnings.push("namespace is empty (layers should have a namespace for proper resolution)".to_string());
-    }
-    if l.meta.version.is_empty() {
-        errors.push("version is required".to_string());
     }
     if l.meta.description.is_empty() {
         warnings.push("description is empty".to_string());
