@@ -1,6 +1,6 @@
 mod cli;
 
-use prompthub::{config, layer, merger, output, parser, pull, renderer, resolver};
+use prompthub::{config, layer, merger, output, parser, pull, push, renderer, resolver};
 use anyhow::Context;
 use clap::Parser;
 use cli::{Cli, Commands, LayerCommands};
@@ -33,6 +33,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Search { keyword } => cmd_search(&keyword),
         Commands::Diff { first, second } => cmd_diff(&first, &second),
         Commands::History { layer } => cmd_history(&layer),
+        Commands::Login { registry_url, token } => cmd_login(&registry_url, token.as_deref()),
+        Commands::Logout { registry_url } => cmd_logout(&registry_url),
+        Commands::Push { layer, source } => cmd_push(&layer, source.as_deref()),
     }
 }
 
@@ -426,4 +429,132 @@ fn find_layer(name: &str) -> anyhow::Result<layer::Layer> {
         config::global_layers_dir(),
     ]);
     resolver.resolve(&layer_ref).map_err(|e| anyhow::anyhow!("{}", e))
+}
+
+// ── login ─────────────────────────────────────────────────────────────────────
+
+fn cmd_login(registry_url: &str, token_flag: Option<&str>) -> anyhow::Result<()> {
+    let token = if let Some(t) = token_flag {
+        // Non-interactive: token provided via --token flag
+        t.to_string()
+    } else {
+        // Interactive: prompt for username + password, call POST /v1/auth/login
+        let username = {
+            print!("Username: ");
+            use std::io::{self, Write};
+            io::stdout().flush()?;
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            input.trim().to_string()
+        };
+        let password = rpassword::prompt_password("Password: ")?;
+
+        // Call POST /v1/auth/login
+        let url = format!("{}/v1/auth/login", registry_url.trim_end_matches('/'));
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()?;
+        let response = client
+            .post(&url)
+            .json(&serde_json::json!({"username": username, "password": password}))
+            .send()
+            .map_err(|e| anyhow::anyhow!("Cannot reach registry: {}", e))?;
+
+        if !response.status().is_success() {
+            anyhow::bail!("Login failed: invalid credentials");
+        }
+
+        let body: serde_json::Value = response.json()?;
+        body["token"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("Registry returned no token"))?
+            .to_string()
+    };
+
+    // Update config
+    let mut cfg = config::Config::load()?;
+
+    if let Some(src) = cfg.find_source_by_url_mut(registry_url) {
+        src.auth = Some(config::SourceAuth { token });
+        let name = src.name.clone();
+        cfg.save()?;
+        println!("{} Logged in to {}", "✓".green(), name);
+    } else {
+        // No matching source — create a new entry from hostname
+        let hostname = registry_url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or(registry_url)
+            .to_string();
+        let new_source = config::Source {
+            name: hostname.clone(),
+            url: registry_url.trim_end_matches('/').to_string(),
+            default: false,
+            auth: Some(config::SourceAuth { token }),
+        };
+        cfg.sources.push(new_source);
+        cfg.save()?;
+        println!("{} Logged in to {} (added as source '{}')", "✓".green(), registry_url, hostname);
+        println!("  Note: set 'default: true' in ~/.prompthub/config.yaml to use it by default.");
+    }
+
+    Ok(())
+}
+
+// ── logout ────────────────────────────────────────────────────────────────────
+
+fn cmd_logout(registry_url: &str) -> anyhow::Result<()> {
+    let mut cfg = config::Config::load()?;
+
+    if let Some(src) = cfg.find_source_by_url_mut(registry_url) {
+        let name = src.name.clone();
+        src.auth = None;
+        cfg.save()?;
+        println!("{} Logged out from {}", "✓".green(), name);
+    } else {
+        println!("No source configured for {}", registry_url);
+    }
+
+    Ok(())
+}
+
+// ── push ──────────────────────────────────────────────────────────────────────
+
+fn cmd_push(layer_str: &str, source_name: Option<&str>) -> anyhow::Result<()> {
+    let target = push::PushTarget::parse(layer_str)?;
+    let cfg = config::Config::load()?;
+
+    let source = if let Some(name) = source_name {
+        cfg.sources.iter().find(|s| s.name == name)
+            .ok_or_else(|| anyhow::anyhow!("Source '{}' not found in config", name))?
+    } else {
+        cfg.default_source()
+            .ok_or_else(|| anyhow::anyhow!("No default source configured"))?
+    };
+
+    let layers_dir = PathBuf::from("layers");
+
+    match push::push_layer(&target, source, &layers_dir)? {
+        push::PushResult::Success(source_name) => {
+            println!(
+                "{} Pushed {}/{}:{} to {}",
+                "✓".green(),
+                target.namespace, target.name, target.version,
+                source_name
+            );
+        }
+        push::PushResult::AlreadyExists(source_name) => {
+            eprintln!(
+                "{} Version {} already exists on {} (versions are immutable)",
+                "✗".red(),
+                target.version,
+                source_name
+            );
+            std::process::exit(1);
+        }
+    }
+
+    Ok(())
 }

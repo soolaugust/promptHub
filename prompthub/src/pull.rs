@@ -1,5 +1,5 @@
 use crate::error::{PromptHubError, Result};
-use crate::config::{Config, global_layers_dir};
+use crate::config::{Config, Source, global_layers_dir};
 use crate::parser::LayerRef;
 use std::path::PathBuf;
 
@@ -24,6 +24,11 @@ pub(crate) fn layer_url_base(base_url: &str, source: &str, version: &str) -> Str
     format!("{}/layers/{}/{}", base_url.trim_end_matches('/'), source, version)
 }
 
+/// Extract the auth token from a source, if any.
+pub(crate) fn auth_token_for(source: &Source) -> Option<&str> {
+    source.auth.as_ref().map(|a| a.token.as_str())
+}
+
 /// Pull a layer from a remote source
 pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
     let source = config.default_source().ok_or_else(|| {
@@ -41,8 +46,9 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
 
     eprintln!("Pulling {} from {}...", layer_ref.display(), source.name);
 
-    let yaml_content = fetch_url(&yaml_url)?;
-    let prompt_content = match fetch_url(&prompt_url) {
+    let token = auth_token_for(source);
+    let yaml_content = fetch_url_with_auth(&yaml_url, token)?;
+    let prompt_content = match fetch_url_with_auth(&prompt_url, token) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Warning: could not fetch prompt.md for {} ({}); layer will have no prompt content", layer_ref.display(), e);
@@ -75,6 +81,27 @@ pub fn pull_layer(layer_ref: &LayerRef, config: &Config) -> Result<PathBuf> {
 
 /// Default HTTP request timeout (30 seconds).
 const FETCH_TIMEOUT_SECS: u64 = 30;
+
+fn fetch_url_with_auth(url: &str, auth_token: Option<&str>) -> Result<String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(PromptHubError::Network)?;
+
+    let mut request = client.get(url);
+    if let Some(token) = auth_token {
+        request = request.header("Authorization", format!("Bearer {}", token));
+    }
+    let response = request.send().map_err(PromptHubError::Network)?;
+
+    if !response.status().is_success() {
+        return Err(PromptHubError::Other(
+            format!("HTTP {} for {}", response.status(), url)
+        ));
+    }
+
+    response.text().map_err(PromptHubError::Network)
+}
 
 #[cfg(test)]
 mod tests {
@@ -112,21 +139,26 @@ mod tests {
         assert_eq!(url, "https://example.com/registry/layers/base/writer/v2.0",
             "trailing slash in base URL should be stripped");
     }
-}
 
-fn fetch_url(url: &str) -> Result<String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(FETCH_TIMEOUT_SECS))
-        .build()
-        .map_err(PromptHubError::Network)?;
+    #[test]
+    fn test_pull_layer_uses_auth_token_when_present() {
+        use crate::config::{Source, SourceAuth};
 
-    let response = client.get(url).send().map_err(PromptHubError::Network)?;
+        let source_with_auth = Source {
+            name: "private-reg".to_string(),
+            url: "https://registry.example.com".to_string(),
+            default: true,
+            auth: Some(SourceAuth { token: "phrt_test123".to_string() }),
+        };
+        let source_no_auth = Source {
+            name: "official".to_string(),
+            url: "https://raw.githubusercontent.com/prompthub/layers/main".to_string(),
+            default: false,
+            auth: None,
+        };
 
-    if !response.status().is_success() {
-        return Err(PromptHubError::Other(
-            format!("HTTP {} for {}", response.status(), url)
-        ));
+        // `auth_token_for` should return the token when auth is set
+        assert_eq!(auth_token_for(&source_with_auth), Some("phrt_test123"));
+        assert_eq!(auth_token_for(&source_no_auth), None);
     }
-
-    response.text().map_err(PromptHubError::Network)
 }

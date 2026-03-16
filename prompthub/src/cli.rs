@@ -67,6 +67,30 @@ pub enum Commands {
         /// Layer name (e.g. base/code-reviewer)
         layer: String,
     },
+
+    /// Log in to a private registry and store the auth token
+    Login {
+        /// Registry URL (e.g. https://registry.mycompany.internal)
+        registry_url: String,
+        /// Use a pre-existing token directly (non-interactive, for CI/AI agents)
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Log out from a private registry (removes stored token)
+    Logout {
+        /// Registry URL
+        registry_url: String,
+    },
+
+    /// Push a layer to a private registry
+    Push {
+        /// Layer reference with version (e.g. base/my-expert:v1.0)
+        layer: String,
+        /// Registry source name (default: uses default source)
+        #[arg(long)]
+        source: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

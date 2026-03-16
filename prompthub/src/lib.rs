@@ -5,5 +5,6 @@ pub mod merger;
 pub mod output;
 pub mod parser;
 pub mod pull;
+pub mod push;
 pub mod renderer;
 pub mod resolver;
