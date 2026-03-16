@@ -317,7 +317,7 @@ fn inspect_layer_impl(params: InspectLayerParams) -> anyhow::Result<String> {
     let layer_ref = parser::LayerRef::parse(&params.layer_ref)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    let mut search_paths = vec![PathBuf::from("layers")];
+    let mut search_paths = vec![PathBuf::from("layers"), config::global_layers_dir()];
     if let Some(extra) = params.layers_dir {
         search_paths.push(PathBuf::from(extra));
     }

@@ -105,14 +105,22 @@ pub fn merge_layers(
 fn check_conflicts(base: &Layer, additional: &[Layer]) -> Result<()> {
     let all_layers: Vec<&Layer> = std::iter::once(base).chain(additional.iter()).collect();
 
+    // Build a set of all present layer identifiers (both full_name and short name)
+    // so conflict lookups are O(1) instead of O(n).
+    // Value is index into all_layers for error reporting.
+    let mut name_to_idx: HashMap<String, usize> = HashMap::new();
+    for (idx, layer) in all_layers.iter().enumerate() {
+        name_to_idx.entry(layer.full_name()).or_insert(idx);
+        name_to_idx.entry(layer.meta.name.clone()).or_insert(idx);
+    }
+
     for (i, layer) in all_layers.iter().enumerate() {
         for conflict in &layer.meta.conflicts {
-            // Check if any other layer is in the conflict list
-            for (j, other) in all_layers.iter().enumerate() {
-                if i != j && (other.full_name() == *conflict || other.meta.name == *conflict) {
+            if let Some(&j) = name_to_idx.get(conflict.as_str()) {
+                if i != j {
                     return Err(PromptHubError::ConflictError(
                         layer.full_name(),
-                        other.full_name(),
+                        all_layers[j].full_name(),
                     ));
                 }
             }
