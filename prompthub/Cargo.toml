@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "A layered prompt management system inspired by Docker"
 license = "MIT"
+homepage = "https://github.com/soolaugust/promptHub"
+repository = "https://github.com/soolaugust/promptHub"
+keywords = ["prompt", "ai", "llm", "cli", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "ph"
