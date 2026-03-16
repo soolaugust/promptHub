@@ -202,7 +202,6 @@ fn build_prompt_impl(params: BuildPromptParams) -> anyhow::Result<String> {
         &pf.vars,
         pf.task.as_deref(),
         &include_contents,
-        &base_dir,
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
 

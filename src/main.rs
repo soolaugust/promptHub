@@ -126,7 +126,6 @@ fn cmd_build(
         &pf.vars,
         pf.task.as_deref(),
         &include_contents,
-        base_dir,
     )
     .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -370,7 +369,7 @@ fn build_to_text(promptfile_path: &Path) -> anyhow::Result<String> {
         .collect();
     let merged = merger::merge_layers(&base_layer, &additional?, pf.params.clone())
         .map_err(|e| anyhow::anyhow!("{}", e))?;
-    renderer::render_variables(&merged, &pf.vars, pf.task.as_deref(), &[], base_dir)
+    renderer::render_variables(&merged, &pf.vars, pf.task.as_deref(), &[])
         .map(|(text, _)| text)
         .map_err(|e| anyhow::anyhow!("{}", e))
 }

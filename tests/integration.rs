@@ -136,7 +136,6 @@ fn test_var_substitution() {
         &pf.vars,
         pf.task.as_deref(),
         &[],
-        tmp.path(),
     ).unwrap();
 
     assert!(undef.is_empty(), "unexpected undefined vars: {:?}", undef);
@@ -182,7 +181,6 @@ fn test_include_file() {
         &pf.vars,
         None,
         &includes,
-        tmp.path(),
     ).unwrap();
 
     assert!(text.contains("data analyst"), "Got: {}", text);

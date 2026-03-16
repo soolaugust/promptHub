@@ -72,9 +72,26 @@ pub fn merge_layers(
         }
     }
 
-    // Apply each additional layer
+    // Apply each additional layer.
+    // Process sections in declared order (meta.sections) first, then any
+    // undeclared sections in sorted order, so the output is deterministic.
     for layer in additional {
-        for (section_name, content) in &layer.sections {
+        // Build the iteration order: declared sections first, then the rest sorted.
+        let declared: Vec<&String> = layer.meta.sections.iter()
+            .filter(|s| layer.sections.contains_key(*s))
+            .collect();
+        let declared_set: HashSet<&String> = declared.iter().copied().collect();
+        let mut extra: Vec<&String> = layer.sections.keys()
+            .filter(|k| !declared_set.contains(k))
+            .collect();
+        extra.sort();
+        let section_iter = declared.iter().copied().chain(extra.into_iter());
+
+        for section_name in section_iter {
+            let content = match layer.sections.get(section_name) {
+                Some(c) => c,
+                None => continue,
+            };
             if merged_sections.contains_key(section_name) {
                 // Same section name → later layer overrides
                 warnings.push(format!(

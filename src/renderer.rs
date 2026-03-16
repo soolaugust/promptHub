@@ -18,7 +18,6 @@ pub fn render_variables(
     vars: &HashMap<String, String>,
     task: Option<&str>,
     includes: &[(std::path::PathBuf, String)],
-    _base_dir: &Path,
 ) -> Result<(String, Vec<String>)> {
     let mut text = merged.to_text();
     let mut undef_warnings: Vec<String> = Vec::new();

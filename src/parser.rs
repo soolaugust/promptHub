@@ -112,7 +112,7 @@ fn parse_instructions(content: &str) -> crate::error::Result<Vec<Instruction>> {
                 instructions.push(Instruction::Task(value));
             }
             "INCLUDE" => {
-                let path = rest.trim_matches('"').trim_matches('\'');
+                let path = parse_quoted_string(rest, line_num + 1)?;
                 instructions.push(Instruction::Include(PathBuf::from(path)));
             }
             _ => {
@@ -280,5 +280,21 @@ LAYER guard/fact-check:v1.0
         let msg = err.to_string();
         assert!(msg.contains("FROM") && msg.contains("LAYER"),
             "error message should list valid directives, got: {}", msg);
+    }
+
+    #[test]
+    fn test_parse_include_quoted() {
+        // INCLUDE with quoted path should work
+        let content = "FROM base/writer:v1.0\nINCLUDE \"./my context.md\"\n";
+        let pf = parse(content).unwrap();
+        assert_eq!(pf.includes[0], std::path::PathBuf::from("./my context.md"));
+    }
+
+    #[test]
+    fn test_parse_include_mismatched_quote_fails() {
+        // INCLUDE with mismatched quote should error (same as other directives)
+        let content = "FROM base/writer:v1.0\nINCLUDE \"./context.md\n";
+        assert!(parse(content).is_err(),
+            "INCLUDE with mismatched quote should produce a parse error");
     }
 }
