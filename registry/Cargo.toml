@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "Self-hosted PromptHub layer registry"
 license = "MIT"
+homepage = "https://github.com/soolaugust/promptHub"
+repository = "https://github.com/soolaugust/promptHub"
+keywords = ["prompt", "registry", "ai", "llm", "server"]
+categories = ["command-line-utilities", "development-tools"]
 
 [lib]
 name = "ph_registry"
