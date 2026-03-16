@@ -95,7 +95,7 @@ Or pull a layer directly (no account required):
 ph pull base/code-reviewer:v1.0 --source https://prompthub-production-19f1.up.railway.app
 ```
 
-> **Note:** The demo runs on Render's free tier and may take ~30 seconds to wake up after inactivity.
+> **Note:** The demo runs on Railway's free tier and may take ~30 seconds to wake up after inactivity.
 
 ## Installation
 

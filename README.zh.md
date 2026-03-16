@@ -95,7 +95,7 @@
 ph pull base/code-reviewer:v1.0 --source https://prompthub-production-19f1.up.railway.app
 ```
 
-> **提示：** Demo 运行在 Render 免费层，15 分钟无活动后会休眠，首次访问冷启动约需 30 秒。
+> **提示：** Demo 运行在 Railway 免费层，15 分钟无活动后会休眠，首次访问冷启动约需 30 秒。
 
 ## 安装
 
