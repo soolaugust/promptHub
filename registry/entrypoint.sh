@@ -9,54 +9,47 @@ LAYERS_DIR="/layers"
 ph-registry /etc/prompthub/registry.yaml &
 REGISTRY_PID=$!
 
-# Wait for registry to be ready
+# Wait for registry to be ready (up to 30s)
 echo "Waiting for registry to start..."
-for i in $(seq 1 30); do
-    if wget -q -O /dev/null "$REGISTRY_URL/layers" 2>/dev/null; then
+i=0
+while [ $i -lt 30 ]; do
+    if curl -sf "$REGISTRY_URL/layers" > /dev/null 2>&1; then
         echo "Registry is ready."
         break
     fi
+    i=$((i + 1))
     sleep 1
 done
 
-# Seed official layers if layers directory exists
+# Seed official layers
 if [ -d "$LAYERS_DIR" ]; then
     echo "Seeding layers from $LAYERS_DIR..."
     for layer_yaml in "$LAYERS_DIR"/*/*/layer.yaml; do
-        # Extract namespace/name/version from path: /layers/base/code-reviewer/layer.yaml
+        [ -f "$layer_yaml" ] || continue
         dir=$(dirname "$layer_yaml")
         name=$(basename "$dir")
-        ns_dir=$(dirname "$dir")
-        namespace=$(basename "$ns_dir")
-        # Read version from layer.yaml
-        version=$(grep '^version:' "$layer_yaml" | head -1 | sed 's/version: *//;s/"//g;s/ *$//')
+        namespace=$(basename "$(dirname "$dir")")
+        version=$(grep '^version:' "$layer_yaml" | head -1 | sed 's/version:[[:space:]]*//' | tr -d '"')
         prompt_md="$dir/prompt.md"
 
-        if [ -z "$version" ] || [ ! -f "$prompt_md" ]; then
-            continue
-        fi
+        [ -n "$version" ] || continue
+        [ -f "$prompt_md" ] || continue
 
-        http_code=$(wget -q -O /dev/null -S \
-            --method=PUT \
-            --header="Authorization: Bearer $ADMIN_TOKEN" \
-            --body-file=/dev/null \
-            "$REGISTRY_URL/layers/$namespace/$name/$version" 2>&1 | grep "HTTP/" | tail -1 | awk '{print $2}' || true)
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PUT "$REGISTRY_URL/layers/$namespace/$name/$version" \
+            -H "Authorization: Bearer $ADMIN_TOKEN" \
+            -F "layer.yaml=@$layer_yaml;type=application/octet-stream" \
+            -F "prompt.md=@$prompt_md;type=text/plain")
 
-        # Use curl if available, otherwise skip multipart (wget can't do multipart)
-        if command -v curl >/dev/null 2>&1; then
-            http_code=$(curl -s -o /dev/null -w "%{http_code}" \
-                -X PUT "$REGISTRY_URL/layers/$namespace/$name/$version" \
-                -H "Authorization: Bearer $ADMIN_TOKEN" \
-                -F "layer.yaml=@$layer_yaml;type=application/octet-stream" \
-                -F "prompt.md=@$prompt_md;type=text/plain")
-            case "$http_code" in
-                201) echo "  OK    $namespace/$name:$version" ;;
-                409) echo "  SKIP  $namespace/$name:$version (already exists)" ;;
-                *)   echo "  FAIL  $namespace/$name:$version (HTTP $http_code)" ;;
-            esac
-        fi
+        case "$http_code" in
+            201) echo "  OK    $namespace/$name:$version" ;;
+            409) echo "  SKIP  $namespace/$name:$version (already exists)" ;;
+            *)   echo "  FAIL  $namespace/$name:$version (HTTP $http_code)" ;;
+        esac
     done
     echo "Seeding done."
+else
+    echo "No layers directory found at $LAYERS_DIR, skipping seed."
 fi
 
 # Wait for registry process
