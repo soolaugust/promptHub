@@ -59,30 +59,55 @@
 ## 安装
 
 ```bash
-cargo install --path .
+cargo install --path prompthub/
 ```
 
 安装后得到两个命令：
 - `ph` — CLI 工具
 - `ph-mcp` — 供 AI 助手（Claude、Cursor 等）使用的 MCP 服务器
 
-## 快速开始
+如需同时安装私有 Registry 服务器：
 
 ```bash
-# 初始化新项目（生成 Promptfile 模板）
-ph init
+cargo install --path registry/
+```
 
-# 构建 prompt（输出到 stdout）
-ph build
+## 快速开始
 
-# 构建时覆盖变量
-ph build --var language=English
+```
+$ ph init
+✓ Created Promptfile
 
-# 输出为 JSON（包含参数和摘要）
-ph build -o json
+$ ph build
+[role]
+你是一位资深代码审查专家，具备 10 年以上工程经验。
 
-# 直接复制到剪贴板
-ph build -o clipboard
+[constraints]
+- 专注于逻辑错误和安全漏洞
+- 提供具体的修复建议
+...
+
+$ ph build --var language=English -o json
+{
+  "prompt": "[role]\nYou are a senior code reviewer...",
+  "params": { "model": "claude-sonnet-4-6", "temperature": "0.3" },
+  "layers": ["base/code-reviewer:v1.0", "style/concise:v1.0"],
+  "digest": "sha256:a1b2c3..."
+}
+```
+
+```bash
+# 从官方仓库拉取层
+ph pull base/code-reviewer:v1.0
+
+# 列出本地所有层
+ph layer list
+
+# 验证层格式
+ph layer validate base/code-reviewer
+
+# 对比两个 Promptfile 的构建输出
+ph diff Promptfile Promptfile.prod
 ```
 
 ## Promptfile 语法
@@ -176,12 +201,20 @@ ph layer new base/my-role
 
 # 列出本地所有 Layer
 ph layer list
+# 输出：
+# LAYER                     PATH
+# ─────────────────────────────────────────────────────────────
+# base/code-reviewer        ~/.prompthub/layers/base/code-reviewer/v1.0
+# style/concise             ~/.prompthub/layers/style/concise/v1.0
+# guard/no-secrets (local)  layers/guard/no-secrets/v1.0
+# 3 layer(s) found
 
 # 查看 Layer 详情和内容
 ph layer inspect base/code-reviewer
 
 # 验证 Layer 格式
 ph layer validate base/code-reviewer
+# ✓ Layer 'base/code-reviewer' is valid
 ```
 
 ## 拉取 Layer
@@ -189,6 +222,9 @@ ph layer validate base/code-reviewer
 ```bash
 # 从官方仓库拉取
 ph pull base/code-reviewer:v1.0
+# Pulling base/code-reviewer:v1.0 from official...
+# ✓ Pulled base/code-reviewer:v1.0 to ~/.prompthub/layers/base/code-reviewer/v1.0
+
 ph pull style/concise
 ```
 
@@ -203,6 +239,156 @@ sources:
     default: true
   - name: my-team
     url: https://github.com/my-org/prompt-layers
+```
+
+## 私有 Registry
+
+企业可以用 `ph-registry` 在内网自建私有层仓库——类似 Docker Registry，但专为 prompt 设计。支持 S3/MinIO 或本地文件系统存储，SQLite 元数据索引，token 认证。
+
+```
+  开发者 / CI 流水线 / AI Agent
+             │
+             │  HTTPS
+             ▼
+  ┌──────────────────────────────────────────────────┐
+  │  ph-registry  (Axum HTTP 服务器)                 │
+  │                                                  │
+  │  GET  /layers/{ns}/{name}/{ver}/layer.yaml       │
+  │  GET  /layers/{ns}/{name}/{ver}/prompt.md        │
+  │  PUT  /layers/{ns}/{name}/{ver}   (push)         │
+  │  GET  /layers?q=keyword           (搜索)         │
+  │  POST /v1/auth/login                             │
+  │  POST /v1/auth/token  (仅限管理员)               │
+  │                                                  │
+  │  ┌─────────────┐  ┌───────────────────────────┐ │
+  │  │  SQLite DB  │  │  S3 / MinIO / 文件系统    │ │
+  │  │  用户       │  │  layers/{ns}/{name}/{ver}/ │ │
+  │  │  token      │  │    layer.yaml              │ │
+  │  │  层元数据   │  │    prompt.md               │ │
+  │  └─────────────┘  └───────────────────────────┘ │
+  └──────────────────────────────────────────────────┘
+```
+
+### 启动 Registry
+
+**文件系统存储（单机，无外部依赖）：**
+
+```yaml
+# registry.yaml
+server:
+  port: 8080
+storage:
+  type: filesystem
+  path: /var/lib/prompthub/layers
+database:
+  path: /data/registry.db
+auth:
+  pull_requires_auth: false
+  admin_token: "phrt_bootstrap_changeme"
+log:
+  level: info
+```
+
+```bash
+ph-registry registry.yaml
+# ph-registry listening on 0.0.0.0:8080
+```
+
+**Docker Compose（生产环境，配合 MinIO）：**
+
+```bash
+docker compose up
+# 启动 ph-registry（:8080）+ MinIO（:9000）
+```
+
+完整配置见 [`registry/docker-compose.yaml`](registry/docker-compose.yaml)。
+
+### 登录认证
+
+```bash
+# 非交互模式（CI 流水线 / AI Agent）——直接使用管理员签发的 token
+ph login --token phrt_xxxxxxxxxxxx https://registry.mycompany.internal
+# ✓ Logged in to registry.mycompany.internal (added as source 'registry.mycompany.internal')
+#   Note: set 'default: true' in ~/.prompthub/config.yaml to use it by default.
+
+# 交互模式——输入用户名和密码（调用 POST /v1/auth/login）
+ph login https://registry.mycompany.internal
+# Username: alice
+# Password: ********
+# ✓ Logged in to my-company
+
+# 清除 token
+ph logout https://registry.mycompany.internal
+# ✓ Logged out from my-company
+```
+
+token 存储在 `~/.prompthub/config.yaml`（文件权限 `0600`，防止其他用户读取）：
+
+```yaml
+sources:
+  - name: my-company
+    url: https://registry.mycompany.internal
+    default: true
+    auth:
+      token: phrt_xxxxxxxxxxxx
+```
+
+### 推送层
+
+```bash
+# 本地须存在 layers/base/my-expert/v1.0/ 目录
+ph push base/my-expert:v1.0
+# ✓ Pushed base/my-expert:v1.0 to my-company
+
+# 推送到指定源
+ph push --source my-company base/my-expert:v1.0
+
+# 版本不可变——推送已存在的版本会被拒绝
+ph push base/my-expert:v1.0
+# ✗ Version v1.0 already exists on my-company (versions are immutable)
+```
+
+`ph push` 在发送前会先在本地验证层的合法性，格式有误直接报错，不会浪费网络请求。
+
+### 签发 token（管理员）
+
+```bash
+# 签发长期 CI token（需要 registry.yaml 中的 admin_token）
+curl -X POST https://registry.mycompany.internal/v1/auth/token \
+  -H "Authorization: Bearer phrt_bootstrap_changeme" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci-pipeline", "expires_in_days": 365}'
+# {"token": "phrt_abc123...", "name": "ci-pipeline", "expires_at": "2027-03-16T..."}
+```
+
+### 完整工作流示例
+
+```
+# 1. 启动 Registry（运维一次性操作）
+ph-registry registry.yaml
+
+# 2. 认证（每台机器一次）
+ph login --token phrt_abc123 https://registry.mycompany.internal
+
+# 3. 在本地创建层
+ph layer new base/sql-expert
+# 编辑 layers/base/sql-expert/layer.yaml 和 prompt.md ...
+
+# 4. 推送到私有 Registry
+ph push base/sql-expert:v1.0
+# ✓ Pushed base/sql-expert:v1.0 to my-company
+
+# 5. 团队其他成员拉取
+ph pull base/sql-expert:v1.0
+# ✓ Pulled base/sql-expert:v1.0 to ~/.prompthub/layers/base/sql-expert/v1.0
+
+# 6. 写入 Promptfile 使用
+cat Promptfile
+# FROM base/sql-expert:v1.0
+# LAYER style/concise:v1.0
+# TASK "优化以下 PostgreSQL 查询语句。"
+
+ph build
 ```
 
 ## 项目目录结构

@@ -59,30 +59,55 @@ Layers merge deterministically: **same section name → later layer overrides**,
 ## Installation
 
 ```bash
-cargo install --path .
+cargo install --path prompthub/
 ```
 
 This installs two binaries:
 - `ph` — CLI tool
 - `ph-mcp` — MCP server for AI assistants (Claude, Cursor, etc.)
 
-## Quick Start
+To also build the private registry server:
 
 ```bash
-# Initialize a new project
-ph init
+cargo install --path registry/
+```
 
-# Build your prompt (outputs to stdout)
-ph build
+## Quick Start
 
-# Override a variable at build time
-ph build --var language=English
+```
+$ ph init
+✓ Created Promptfile
 
-# Output as JSON (includes params and digest)
-ph build -o json
+$ ph build
+[role]
+You are a senior code reviewer with 10+ years of experience.
 
-# Copy directly to clipboard
-ph build -o clipboard
+[constraints]
+- Focus on logic errors and security vulnerabilities
+- Provide specific fix suggestions
+...
+
+$ ph build --var language=English -o json
+{
+  "prompt": "[role]\nYou are a senior code reviewer...",
+  "params": { "model": "claude-sonnet-4-6", "temperature": "0.3" },
+  "layers": ["base/code-reviewer:v1.0", "style/concise:v1.0"],
+  "digest": "sha256:a1b2c3..."
+}
+```
+
+```bash
+# Pull a layer from the official registry
+ph pull base/code-reviewer:v1.0
+
+# List locally available layers
+ph layer list
+
+# Validate a layer's format
+ph layer validate base/code-reviewer
+
+# Compare build output of two Promptfiles
+ph diff Promptfile Promptfile.prod
 ```
 
 ## Promptfile Syntax
@@ -176,12 +201,20 @@ ph layer new base/my-role
 
 # List all locally available layers
 ph layer list
+# Output:
+# LAYER                     PATH
+# ─────────────────────────────────────────────────────────────
+# base/code-reviewer        ~/.prompthub/layers/base/code-reviewer/v1.0
+# style/concise             ~/.prompthub/layers/style/concise/v1.0
+# guard/no-secrets (local)  layers/guard/no-secrets/v1.0
+# 3 layer(s) found
 
 # Inspect a layer's metadata and content
 ph layer inspect base/code-reviewer
 
 # Validate a layer's format
 ph layer validate base/code-reviewer
+# ✓ Layer 'base/code-reviewer' is valid
 ```
 
 ## Fetching Layers
@@ -189,6 +222,9 @@ ph layer validate base/code-reviewer
 ```bash
 # Pull from the official registry
 ph pull base/code-reviewer:v1.0
+# Pulling base/code-reviewer:v1.0 from official...
+# ✓ Pulled base/code-reviewer:v1.0 to ~/.prompthub/layers/base/code-reviewer/v1.0
+
 ph pull style/concise
 ```
 
@@ -203,6 +239,156 @@ sources:
     default: true
   - name: my-team
     url: https://github.com/my-org/prompt-layers
+```
+
+## Private Registry
+
+For teams that need to self-host layers internally, PromptHub includes `ph-registry` — a standalone HTTP server with S3/filesystem storage, SQLite metadata, and token-based auth.
+
+```
+  Developer / CI Pipeline / AI Agent
+             │
+             │  HTTPS
+             ▼
+  ┌──────────────────────────────────────────────────┐
+  │  ph-registry  (Axum HTTP server)                 │
+  │                                                  │
+  │  GET  /layers/{ns}/{name}/{ver}/layer.yaml       │
+  │  GET  /layers/{ns}/{name}/{ver}/prompt.md        │
+  │  PUT  /layers/{ns}/{name}/{ver}   (push)         │
+  │  GET  /layers?q=keyword           (search)       │
+  │  POST /v1/auth/login                             │
+  │  POST /v1/auth/token  (admin only)               │
+  │                                                  │
+  │  ┌─────────────┐  ┌───────────────────────────┐ │
+  │  │  SQLite DB  │  │  S3 / MinIO / Filesystem  │ │
+  │  │  users      │  │  layers/{ns}/{name}/{ver}/ │ │
+  │  │  tokens     │  │    layer.yaml              │ │
+  │  │  layer_meta │  │    prompt.md               │ │
+  │  └─────────────┘  └───────────────────────────┘ │
+  └──────────────────────────────────────────────────┘
+```
+
+### Start the registry
+
+**Filesystem storage (single machine, no dependencies):**
+
+```yaml
+# registry.yaml
+server:
+  port: 8080
+storage:
+  type: filesystem
+  path: /var/lib/prompthub/layers
+database:
+  path: /data/registry.db
+auth:
+  pull_requires_auth: false
+  admin_token: "phrt_bootstrap_changeme"
+log:
+  level: info
+```
+
+```bash
+ph-registry registry.yaml
+# ph-registry listening on 0.0.0.0:8080
+```
+
+**Docker Compose (production, with MinIO):**
+
+```bash
+docker compose up
+# Starts ph-registry on :8080 + MinIO on :9000
+```
+
+See [`registry/docker-compose.yaml`](registry/docker-compose.yaml) for the full configuration.
+
+### Authenticate
+
+```bash
+# Non-interactive (CI / AI agents) — use an admin-issued token directly
+ph login --token phrt_xxxxxxxxxxxx https://registry.mycompany.internal
+# ✓ Logged in to registry.mycompany.internal (added as source 'registry.mycompany.internal')
+#   Note: set 'default: true' in ~/.prompthub/config.yaml to use it by default.
+
+# Interactive — prompts for username + password (calls POST /v1/auth/login)
+ph login https://registry.mycompany.internal
+# Username: alice
+# Password: ********
+# ✓ Logged in to my-company
+
+# Remove token
+ph logout https://registry.mycompany.internal
+# ✓ Logged out from my-company
+```
+
+The token is stored in `~/.prompthub/config.yaml` (written with `0600` permissions):
+
+```yaml
+sources:
+  - name: my-company
+    url: https://registry.mycompany.internal
+    default: true
+    auth:
+      token: phrt_xxxxxxxxxxxx
+```
+
+### Push a layer
+
+```bash
+# The layer must exist locally at layers/base/my-expert/v1.0/
+ph push base/my-expert:v1.0
+# ✓ Pushed base/my-expert:v1.0 to my-company
+
+# Push to a specific named source
+ph push --source my-company base/my-expert:v1.0
+
+# Version immutability — pushing the same version twice is rejected
+ph push base/my-expert:v1.0
+# ✗ Version v1.0 already exists on my-company (versions are immutable)
+```
+
+`ph push` validates the layer locally before sending it, so bad layers are rejected before any network round-trip.
+
+### Issue tokens (admin)
+
+```bash
+# Create a long-lived CI token (requires admin_token from registry.yaml)
+curl -X POST https://registry.mycompany.internal/v1/auth/token \
+  -H "Authorization: Bearer phrt_bootstrap_changeme" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci-pipeline", "expires_in_days": 365}'
+# {"token": "phrt_abc123...", "name": "ci-pipeline", "expires_at": "2027-03-16T..."}
+```
+
+### Full workflow example
+
+```
+# 1. Start the registry (one-time, ops team)
+ph-registry registry.yaml
+
+# 2. Authenticate (one-time per machine)
+ph login --token phrt_abc123 https://registry.mycompany.internal
+
+# 3. Author a layer locally
+ph layer new base/sql-expert
+# Edit layers/base/sql-expert/layer.yaml and prompt.md ...
+
+# 4. Push to private registry
+ph push base/sql-expert:v1.0
+# ✓ Pushed base/sql-expert:v1.0 to my-company
+
+# 5. Anyone on the team can now pull it
+ph pull base/sql-expert:v1.0
+# ✓ Pulled base/sql-expert:v1.0 to ~/.prompthub/layers/base/sql-expert/v1.0
+
+# 6. Use in a Promptfile
+cat Promptfile
+# FROM base/sql-expert:v1.0
+# LAYER style/concise:v1.0
+# TASK "Optimize the following query for PostgreSQL."
+
+ph build
 ```
 
 ## Project Layout
