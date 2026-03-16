@@ -9,7 +9,7 @@
 [![CI](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml/badge.svg)](https://github.com/soolaugust/promptHub/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/prompthub.svg)](https://crates.io/crates/prompthub)
 [![crates.io downloads](https://img.shields.io/crates/d/prompthub.svg)](https://crates.io/crates/prompthub)
-[![Demo](https://img.shields.io/badge/demo-在线体验-brightgreen)](https://prompthub-demo.up.railway.app)
+[![Demo](https://img.shields.io/badge/demo-在线体验-brightgreen)](https://prompthub-production-19f1.up.railway.app)
 
 ![PromptHub demo](docs/demo.gif)
 
@@ -87,12 +87,12 @@
 
 ## 在线体验
 
-[打开 Registry UI →](https://prompthub-demo.up.railway.app)
+[打开 Registry UI →](https://prompthub-production-19f1.up.railway.app)
 
 或直接拉取一个层（无需注册）：
 
 ```bash
-ph pull base/code-reviewer:v1.0 --source https://prompthub-demo.up.railway.app
+ph pull base/code-reviewer:v1.0 --source https://prompthub-production-19f1.up.railway.app
 ```
 
 > **提示：** Demo 运行在 Render 免费层，15 分钟无活动后会休眠，首次访问冷启动约需 30 秒。
