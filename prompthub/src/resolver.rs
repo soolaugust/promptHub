@@ -64,11 +64,12 @@ impl LayerResolver {
     /// all required base layers in dependency-first order (deepest base first).
     /// Dependencies are deduplicated — a shared dep appears only once.
     ///
-    /// Cycles are handled via a visited set (no infinite recursion).
+    /// Cycles are detected and return an error. Diamond dependencies are deduplicated silently.
     pub fn resolve_with_requires(&self, layer_ref: &LayerRef) -> Result<(Layer, Vec<Layer>)> {
-        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut in_progress = std::collections::HashSet::new();
         let layer = self.resolve(layer_ref)?;
-        let deps = self.collect_requires(&layer, &mut visited)?;
+        let deps = self.collect_requires(&layer, &mut visited, &mut in_progress)?;
         Ok((layer, deps))
     }
 
@@ -77,6 +78,7 @@ impl LayerResolver {
         &self,
         layer: &Layer,
         visited: &mut std::collections::HashSet<String>,
+        in_progress: &mut std::collections::HashSet<String>,
     ) -> Result<Vec<Layer>> {
         let mut result = Vec::new();
         for req_str in &layer.meta.requires {
@@ -86,10 +88,15 @@ impl LayerResolver {
                 (req_str.as_str(), "latest")
             };
             let key = format!("{}:{}", source, version);
-            if visited.contains(&key) {
-                continue; // deduplicate shared dependencies
+            if in_progress.contains(&key) {
+                return Err(PromptHubError::ValidationError(
+                    format!("Circular dependency detected: '{}' is already being resolved", key)
+                ));
             }
-            visited.insert(key);
+            if visited.contains(&key) {
+                continue; // diamond dedup: fully processed, safe to skip
+            }
+            in_progress.insert(key.clone());
 
             let req_ref = LayerRef {
                 source: source.to_string(),
@@ -97,8 +104,11 @@ impl LayerResolver {
             };
             let req_layer = self.resolve(&req_ref)?;
             // Depth-first: collect the dep's own requires first (deepest base comes first)
-            let mut transitive = self.collect_requires(&req_layer, visited)?;
+            let mut transitive = self.collect_requires(&req_layer, visited, in_progress)?;
             result.append(&mut transitive);
+
+            in_progress.remove(&key); // backtrack: no longer on the call stack
+            visited.insert(key);      // mark as fully processed
             result.push(req_layer);
         }
         Ok(result)
@@ -475,5 +485,34 @@ models: []
 
         let names: Vec<&str> = deps.iter().map(|l| l.meta.name.as_str()).collect();
         assert_eq!(names.iter().filter(|&&n| n == "d").count(), 1, "d should appear once: {:?}", names);
+    }
+
+    #[test]
+    fn test_resolve_with_requires_cycle_returns_error() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create A that requires B, B that requires A (cycle)
+        let make = |name: &str, requires: &[&str]| {
+            let dir = tmp.path().join("cycle").join(name).join("v1.0");
+            std::fs::create_dir_all(&dir).unwrap();
+            let req_list: Vec<String> = requires.iter().map(|r| format!("\"{}\"", r)).collect();
+            let yaml = format!(
+                "name: {name}\nnamespace: cycle\nversion: v1.0\ndescription: \"\"\nauthor: test\ntags: []\nsections: []\nconflicts: []\nrequires: [{reqs}]\nmodels: []\n",
+                name=name, reqs=req_list.join(", ")
+            );
+            std::fs::write(dir.join("layer.yaml"), yaml).unwrap();
+            std::fs::write(dir.join("prompt.md"), "").unwrap();
+        };
+
+        make("a", &["cycle/b:v1.0"]);
+        make("b", &["cycle/a:v1.0"]);
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "cycle/a".to_string(), version: "v1.0".to_string() };
+        let result = resolver.resolve_with_requires(&layer_ref);
+        assert!(result.is_err(), "circular dependency should return an error");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("ircular") || err_msg.contains("cycle") || err_msg.contains("cycle/a") || err_msg.contains("cycle/b"),
+            "error message should mention the cycle: {}", err_msg);
     }
 }

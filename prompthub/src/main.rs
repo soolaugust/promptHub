@@ -101,9 +101,16 @@ fn cmd_build(
     let local_layers = base_dir.join("layers");
     let resolver = resolver::LayerResolver::new(vec![local_layers]);
 
-    let base_layer = resolver.resolve(&pf.from).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let (base_layer, from_deps) = resolver.resolve_with_requires(&pf.from).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     let mut additional_layers = Vec::new();
+    // Prepend base layer's own transitive requires (deduplicated)
+    for dep in from_deps {
+        let dep_key = dep.full_name();
+        if !additional_layers.iter().any(|existing: &layer::Layer| existing.full_name() == dep_key) {
+            additional_layers.push(dep);
+        }
+    }
     for layer_ref in &pf.layers {
         let (l, deps) = resolver.resolve_with_requires(layer_ref).map_err(|e| anyhow::anyhow!("{}", e))?;
         for dep in deps {
