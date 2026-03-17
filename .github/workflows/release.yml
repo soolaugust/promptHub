@@ -42,8 +42,8 @@ jobs:
           # 写回 registry/Cargo.toml (version 字段)
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" registry/Cargo.toml
 
-          # 替换 registry 中的 path 依赖为版本依赖
-          sed -i 's|prompthub = { path = "../prompthub" }|prompthub = "'"$NEW_VERSION"'"|' registry/Cargo.toml
+          # 替换 registry 中的 path 依赖为版本依赖（兼容行内有额外字段的格式）
+          sed -i 's|prompthub = { path = "\.\./prompthub"[^}]* }|prompthub = "'"$NEW_VERSION"'"|' registry/Cargo.toml
 
       - name: Configure git
         run: |
@@ -71,7 +71,7 @@ jobs:
 
       - name: Restore path dependency and push
         run: |
-          sed -i 's|prompthub = ".*"|prompthub = { path = "../prompthub" }|' registry/Cargo.toml
+          sed -i 's|prompthub = "[^"]*"|prompthub = { path = "../prompthub", default-features = false }|' registry/Cargo.toml
           git add registry/Cargo.toml
           git commit -m "chore: restore path dependency after release"
           git push origin HEAD:master
