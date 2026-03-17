@@ -36,6 +36,11 @@ pub enum Commands {
         /// Show warnings
         #[arg(long)]
         warn: bool,
+
+        /// Target output language code (e.g. en, ja, zh).
+        /// Routes to the matching language variant of each layer if available.
+        #[arg(long, value_name = "CODE")]
+        lang: Option<String>,
     },
 
     /// Layer management commands
@@ -111,6 +116,34 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         yes: bool,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_build_lang_flag_parsed() {
+        let args = Cli::try_parse_from(["ph", "build", "--lang", "en"]).unwrap();
+        match args.command {
+            Commands::Build { lang, .. } => {
+                assert_eq!(lang, Some("en".to_string()));
+            }
+            _ => panic!("expected Build command"),
+        }
+    }
+
+    #[test]
+    fn test_build_lang_flag_optional() {
+        let args = Cli::try_parse_from(["ph", "build"]).unwrap();
+        match args.command {
+            Commands::Build { lang, .. } => {
+                assert_eq!(lang, None);
+            }
+            _ => panic!("expected Build command"),
+        }
+    }
 }
 
 #[derive(clap::ValueEnum, Clone, Debug)]

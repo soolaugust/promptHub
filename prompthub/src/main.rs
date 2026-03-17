@@ -21,8 +21,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init { dir } => cmd_init(&dir),
-        Commands::Build { promptfile, var, output, warn } => {
-            cmd_build(&promptfile, &var, &output, warn)
+        Commands::Build { promptfile, var, output, warn, lang } => {
+            cmd_build(&promptfile, &var, &output, warn, lang.as_deref())
         }
         Commands::Layer(layer_cmd) => match layer_cmd {
             LayerCommands::New { name, dir } => cmd_layer_new(&name, &dir),
@@ -85,6 +85,7 @@ fn cmd_build(
     var_overrides: &[String],
     format: &output::OutputFormat,
     show_warnings: bool,
+    lang: Option<&str>,
 ) -> anyhow::Result<()> {
     let base_dir = promptfile_path.parent().unwrap_or(Path::new("."));
 
@@ -101,7 +102,7 @@ fn cmd_build(
     let local_layers = base_dir.join("layers");
     let resolver = resolver::LayerResolver::new(vec![local_layers]);
 
-    let (base_layer, from_deps) = resolver.resolve_with_requires(&pf.from, None).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let (base_layer, from_deps) = resolver.resolve_with_requires(&pf.from, lang).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     let mut additional_layers = Vec::new();
     // Prepend base layer's own transitive requires (deduplicated)
@@ -112,7 +113,7 @@ fn cmd_build(
         }
     }
     for layer_ref in &pf.layers {
-        let (l, deps) = resolver.resolve_with_requires(layer_ref, None).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (l, deps) = resolver.resolve_with_requires(layer_ref, lang).map_err(|e| anyhow::anyhow!("{}", e))?;
         for dep in deps {
             let dep_key = dep.full_name();
             if !additional_layers.iter().any(|existing: &layer::Layer| existing.full_name() == dep_key) {
