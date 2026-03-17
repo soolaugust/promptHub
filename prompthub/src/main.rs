@@ -190,6 +190,8 @@ fn cmd_layer_new(name: &str, base_dir: &Path) -> anyhow::Result<()> {
         conflicts: Vec::new(),
         requires: Vec::new(),
         models: vec!["claude-*".to_string(), "gpt-4*".to_string()],
+        language: None,
+        family: None,
     };
     let yaml = serde_yaml::to_string(&template_meta)
         .with_context(|| "Failed to serialize layer.yaml template")?;

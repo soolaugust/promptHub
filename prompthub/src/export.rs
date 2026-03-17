@@ -177,6 +177,8 @@ fn export_one_skill(skill_name: &str, skill_dir: &Path, output: &Path) -> anyhow
         conflicts: Vec::new(),
         requires: Vec::new(),
         models: Vec::new(),
+        language: None,
+        family: None,
     };
 
     // Output path: {output}/skill/{name}/v1.0/
@@ -630,6 +632,8 @@ fn run_refactor(layers_dir: &Path, skip_confirm: bool) -> anyhow::Result<()> {
             conflicts: Vec::new(),
             requires: Vec::new(),
             models: Vec::new(),
+            language: None,
+            family: None,
         };
         let core_dir = layers_dir.join(core_ns).join(core_name).join("v1.0");
         write_layer(&core_meta, &core_content, &core_dir)?;
@@ -795,6 +799,8 @@ Rewrite the following text.
             conflicts: Vec::new(),
             requires: Vec::new(),
             models: Vec::new(),
+            language: None,
+            family: None,
         };
 
         write_layer(&meta, "[instructions]\nTest content.\n", tmp.path()).unwrap();

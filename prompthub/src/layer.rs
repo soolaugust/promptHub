@@ -23,6 +23,10 @@ pub struct LayerMeta {
     pub requires: Vec<String>,
     #[serde(default)]
     pub models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
 }
 
 /// A fully loaded layer (metadata + content)
@@ -307,6 +311,8 @@ Use markdown."#;
             conflicts: Vec::new(),
             requires: Vec::new(),
             models: Vec::new(),
+            language: None,
+            family: None,
         };
         let layer = Layer {
             meta,
@@ -332,6 +338,8 @@ Use markdown."#;
             conflicts: Vec::new(),
             requires: Vec::new(),
             models: Vec::new(),
+            language: None,
+            family: None,
         };
         let layer = Layer {
             meta,
@@ -413,6 +421,63 @@ Use markdown."#;
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("version") || msg.contains("required"),
             "error should mention 'version' or 'required', got: {}", msg);
+    }
+
+    #[test]
+    fn test_layer_meta_language_family_roundtrip() {
+        // language/family fields serialize and deserialize correctly
+        let meta = LayerMeta {
+            name: "pua".into(),
+            namespace: "skill".into(),
+            version: "v1.0".into(),
+            description: "test".into(),
+            author: "test".into(),
+            tags: vec![],
+            sections: vec![],
+            conflicts: vec![],
+            requires: vec![],
+            models: vec![],
+            language: Some("zh".into()),
+            family: Some("pua".into()),
+        };
+        let yaml = serde_yaml::to_string(&meta).unwrap();
+        assert!(yaml.contains("language: zh"), "should serialize language");
+        assert!(yaml.contains("family: pua"), "should serialize family");
+
+        let back: LayerMeta = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(back.language, Some("zh".into()));
+        assert_eq!(back.family, Some("pua".into()));
+    }
+
+    #[test]
+    fn test_layer_meta_old_yaml_deserializes_none() {
+        // Old layer.yaml without language/family fields → both None
+        let yaml = "name: old\nnamespace: base\nversion: v1.0\ndescription: \"\"\nauthor: \"\"\ntags: []\nsections: []\nconflicts: []\nrequires: []\nmodels: []\n";
+        let meta: LayerMeta = serde_yaml::from_str(yaml).unwrap();
+        assert_eq!(meta.language, None);
+        assert_eq!(meta.family, None);
+    }
+
+    #[test]
+    fn test_layer_meta_none_fields_not_serialized() {
+        // None language/family must NOT appear in serialized YAML
+        let meta = LayerMeta {
+            name: "base".into(),
+            namespace: "ns".into(),
+            version: "v1.0".into(),
+            description: "".into(),
+            author: "".into(),
+            tags: vec![],
+            sections: vec![],
+            conflicts: vec![],
+            requires: vec![],
+            models: vec![],
+            language: None,
+            family: None,
+        };
+        let yaml = serde_yaml::to_string(&meta).unwrap();
+        assert!(!yaml.contains("language"), "None language must not appear in YAML");
+        assert!(!yaml.contains("family"), "None family must not appear in YAML");
     }
 }
 
