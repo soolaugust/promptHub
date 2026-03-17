@@ -58,6 +58,52 @@ impl LayerResolver {
         ))
     }
 
+    /// Resolve a layer AND all its transitive `requires` dependencies.
+    ///
+    /// Returns `(target_layer, deps_in_order)` where `deps_in_order` contains
+    /// all required base layers in dependency-first order (deepest base first).
+    /// Dependencies are deduplicated — a shared dep appears only once.
+    ///
+    /// Cycles are handled via a visited set (no infinite recursion).
+    pub fn resolve_with_requires(&self, layer_ref: &LayerRef) -> Result<(Layer, Vec<Layer>)> {
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let layer = self.resolve(layer_ref)?;
+        let deps = self.collect_requires(&layer, &mut visited)?;
+        Ok((layer, deps))
+    }
+
+    /// Recursively collect all `requires` layers in dependency-first order.
+    fn collect_requires(
+        &self,
+        layer: &Layer,
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Result<Vec<Layer>> {
+        let mut result = Vec::new();
+        for req_str in &layer.meta.requires {
+            let (source, version) = if let Some(pos) = req_str.rfind(':') {
+                (&req_str[..pos], &req_str[pos + 1..])
+            } else {
+                (req_str.as_str(), "latest")
+            };
+            let key = format!("{}:{}", source, version);
+            if visited.contains(&key) {
+                continue; // deduplicate shared dependencies
+            }
+            visited.insert(key);
+
+            let req_ref = LayerRef {
+                source: source.to_string(),
+                version: version.to_string(),
+            };
+            let req_layer = self.resolve(&req_ref)?;
+            // Depth-first: collect the dep's own requires first (deepest base comes first)
+            let mut transitive = self.collect_requires(&req_layer, visited)?;
+            result.append(&mut transitive);
+            result.push(req_layer);
+        }
+        Ok(result)
+    }
+
     fn search_paths(&self) -> Vec<PathBuf> {
         let mut paths = self.extra_paths.clone();
         paths.push(global_layers_dir());
@@ -374,5 +420,60 @@ models: []
         // Three-part versions without a leading 'v' should be parsed correctly.
         assert_eq!(parse_semver("1.2.3"), Some(semver::Version::new(1, 2, 3)));
         assert_eq!(parse_semver("0.1.0"), Some(semver::Version::new(0, 1, 0)));
+    }
+
+    #[test]
+    fn test_resolve_with_requires_loads_base_layers() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create base layer pua/core/v1.0
+        let core_dir = tmp.path().join("pua").join("core").join("v1.0");
+        fs::create_dir_all(&core_dir).unwrap();
+        fs::write(core_dir.join("layer.yaml"), "name: core\nnamespace: pua\nversion: v1.0\ndescription: \"PUA core\"\nauthor: test\ntags: []\nsections: [instructions]\nconflicts: []\nrequires: []\nmodels: []\n").unwrap();
+        fs::write(core_dir.join("prompt.md"), "[instructions]\nCore methodology.\n").unwrap();
+
+        // Create dependent layer pua/zh/v1.0 that requires pua/core
+        let zh_dir = tmp.path().join("pua").join("zh").join("v1.0");
+        fs::create_dir_all(&zh_dir).unwrap();
+        fs::write(zh_dir.join("layer.yaml"), "name: zh\nnamespace: pua\nversion: v1.0\ndescription: \"PUA Chinese\"\nauthor: test\ntags: []\nsections: [rhetoric]\nconflicts: []\nrequires: [\"pua/core:v1.0\"]\nmodels: []\n").unwrap();
+        fs::write(zh_dir.join("prompt.md"), "[rhetoric]\nChinese PUA rhetoric.\n").unwrap();
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "pua/zh".to_string(), version: "v1.0".to_string() };
+
+        let (layer, deps) = resolver.resolve_with_requires(&layer_ref).unwrap();
+        assert_eq!(layer.meta.name, "zh");
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].meta.name, "core");
+    }
+
+    #[test]
+    fn test_resolve_with_requires_deduplicates_shared_deps() {
+        // A → B, A → C, B → D, C → D — D should appear only once
+        let tmp = TempDir::new().unwrap();
+
+        let make = |ns: &str, name: &str, requires: &[&str]| {
+            let dir = tmp.path().join(ns).join(name).join("v1.0");
+            fs::create_dir_all(&dir).unwrap();
+            let req_list: Vec<String> = requires.iter().map(|r| format!("\"{}\"", r)).collect();
+            let yaml = format!(
+                "name: {name}\nnamespace: {ns}\nversion: v1.0\ndescription: \"\"\nauthor: test\ntags: []\nsections: []\nconflicts: []\nrequires: [{reqs}]\nmodels: []\n",
+                name=name, ns=ns, reqs=req_list.join(", ")
+            );
+            fs::write(dir.join("layer.yaml"), yaml).unwrap();
+            fs::write(dir.join("prompt.md"), "").unwrap();
+        };
+
+        make("t", "d", &[]);
+        make("t", "b", &["t/d:v1.0"]);
+        make("t", "c", &["t/d:v1.0"]);
+        make("t", "a", &["t/b:v1.0", "t/c:v1.0"]);
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "t/a".to_string(), version: "v1.0".to_string() };
+        let (_, deps) = resolver.resolve_with_requires(&layer_ref).unwrap();
+
+        let names: Vec<&str> = deps.iter().map(|l| l.meta.name.as_str()).collect();
+        assert_eq!(names.iter().filter(|&&n| n == "d").count(), 1, "d should appear once: {:?}", names);
     }
 }

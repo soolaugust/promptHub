@@ -105,7 +105,13 @@ fn cmd_build(
 
     let mut additional_layers = Vec::new();
     for layer_ref in &pf.layers {
-        let l = resolver.resolve(layer_ref).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (l, deps) = resolver.resolve_with_requires(layer_ref).map_err(|e| anyhow::anyhow!("{}", e))?;
+        for dep in deps {
+            let dep_key = dep.full_name();
+            if !additional_layers.iter().any(|existing: &layer::Layer| existing.full_name() == dep_key) {
+                additional_layers.push(dep);
+            }
+        }
         additional_layers.push(l);
     }
 
