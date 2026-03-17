@@ -8,3 +8,4 @@ pub mod pull;
 pub mod push;
 pub mod renderer;
 pub mod resolver;
+pub mod similarity;

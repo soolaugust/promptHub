@@ -9,10 +9,18 @@ pub fn cmd_export(
     source: &crate::cli::ExportSource,
     name: Option<&str>,
     output: &str,
+    no_analyze: bool,
 ) -> anyhow::Result<()> {
     let output_path = Path::new(output);
     match source {
-        crate::cli::ExportSource::Skills => export_skills(name, output_path),
+        crate::cli::ExportSource::Skills => {
+            export_skills(name, output_path)?;
+            if !no_analyze && name.is_none() {
+                // Full export: auto-run similarity analysis
+                run_similarity_analysis(output_path)?;
+            }
+            Ok(())
+        }
         crate::cli::ExportSource::Layers => export_layers(name, output_path),
     }
 }
@@ -421,6 +429,99 @@ fn git_user_name() -> Option<String> {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+// ── similarity analysis ───────────────────────────────────────────────────────
+
+fn run_similarity_analysis(_layers_dir: &Path) -> anyhow::Result<()> {
+    use prompthub::similarity::{find_common_chunks, generate_split_plan, split_into_chunks, SkillContent};
+
+    // Analyse the *original* SKILL.md files (which use ## headings) rather than
+    // the exported prompt.md (which wraps content in [section] markers).
+    // This ensures split_into_chunks can segment content meaningfully.
+    let skills_dir = skills_base_dir();
+    if !skills_dir.exists() {
+        return Ok(());
+    }
+
+    let mut skill_contents: Vec<SkillContent> = Vec::new();
+
+    for entry in std::fs::read_dir(&skills_dir)
+        .with_context(|| format!("Cannot read skills directory: {}", skills_dir.display()))?
+    {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let skill_name = entry.file_name().to_string_lossy().to_string();
+        let skill_md_path = entry.path().join("SKILL.md");
+
+        if skill_md_path.exists() {
+            let content = std::fs::read_to_string(&skill_md_path)
+                .with_context(|| format!("Cannot read {}", skill_md_path.display()))?;
+            // Parse frontmatter away — body starts after second '---'
+            let body = if content.trim_start().starts_with("---") {
+                let after_first = content.trim_start().trim_start_matches("---");
+                if let Some(end) = after_first.find("\n---") {
+                    after_first[end + 4..].trim_start().to_string()
+                } else {
+                    content.clone()
+                }
+            } else {
+                content.clone()
+            };
+            let chunks = split_into_chunks(&body);
+            if !chunks.is_empty() {
+                skill_contents.push(SkillContent {
+                    name: skill_name,
+                    chunks,
+                });
+            }
+        }
+    }
+
+    if skill_contents.len() < 2 {
+        return Ok(());
+    }
+
+    let suggestions = find_common_chunks(&skill_contents, 0.85);
+    if suggestions.is_empty() {
+        println!("\n{} 未发现可复用的公共段落", "✓".green());
+        return Ok(());
+    }
+
+    let plans = generate_split_plan(&suggestions);
+
+    println!(
+        "\n{} 发现 {} 处可复用的公共段落：\n",
+        "⚡".yellow(),
+        suggestions.len()
+    );
+
+    for (i, plan) in plans.iter().enumerate() {
+        println!(
+            "  {}. 建议提取 {} (覆盖 {} 个 skill: {})",
+            i + 1,
+            plan.suggested_core_name.cyan(),
+            plan.affected_skills.len(),
+            plan.affected_skills.join(", ").dimmed(),
+        );
+        for chunk in &plan.common_chunks {
+            println!(
+                "     - 段落 \"{}\" (相似度 {:.0}%)",
+                chunk.heading,
+                chunk.avg_similarity * 100.0
+            );
+        }
+    }
+
+    println!(
+        "\n  运行 {} 自动生成层结构",
+        "ph export skills --refactor".cyan()
+    );
+    // Note: --refactor flag will be added in Task 0.5
+
+    Ok(())
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────

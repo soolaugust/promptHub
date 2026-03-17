@@ -101,6 +101,9 @@ pub enum Commands {
         /// Output directory (default: ./layers)
         #[arg(long, default_value = "layers")]
         output: String,
+        /// Skip similarity analysis after export (default: auto-analyze on full export)
+        #[arg(long, default_value_t = false)]
+        no_analyze: bool,
     },
 }
 
