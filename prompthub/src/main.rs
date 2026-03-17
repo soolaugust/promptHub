@@ -101,7 +101,7 @@ fn cmd_build(
     let local_layers = base_dir.join("layers");
     let resolver = resolver::LayerResolver::new(vec![local_layers]);
 
-    let (base_layer, from_deps) = resolver.resolve_with_requires(&pf.from).map_err(|e| anyhow::anyhow!("{}", e))?;
+    let (base_layer, from_deps) = resolver.resolve_with_requires(&pf.from, None).map_err(|e| anyhow::anyhow!("{}", e))?;
 
     let mut additional_layers = Vec::new();
     // Prepend base layer's own transitive requires (deduplicated)
@@ -112,7 +112,7 @@ fn cmd_build(
         }
     }
     for layer_ref in &pf.layers {
-        let (l, deps) = resolver.resolve_with_requires(layer_ref).map_err(|e| anyhow::anyhow!("{}", e))?;
+        let (l, deps) = resolver.resolve_with_requires(layer_ref, None).map_err(|e| anyhow::anyhow!("{}", e))?;
         for dep in deps {
             let dep_key = dep.full_name();
             if !additional_layers.iter().any(|existing: &layer::Layer| existing.full_name() == dep_key) {

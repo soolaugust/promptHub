@@ -65,12 +65,65 @@ impl LayerResolver {
     /// Dependencies are deduplicated — a shared dep appears only once.
     ///
     /// Cycles are detected and return an error. Diamond dependencies are deduplicated silently.
-    pub fn resolve_with_requires(&self, layer_ref: &LayerRef) -> Result<(Layer, Vec<Layer>)> {
+    ///
+    /// If `lang` is `Some(code)`, language routing is applied via `resolve_with_lang`.
+    pub fn resolve_with_requires(&self, layer_ref: &LayerRef, lang: Option<&str>) -> Result<(Layer, Vec<Layer>)> {
         let mut visited = std::collections::HashSet::new();
         let mut in_progress = std::collections::HashSet::new();
-        let layer = self.resolve(layer_ref)?;
+        let layer = self.resolve_with_lang(layer_ref, lang)?;
         let deps = self.collect_requires(&layer, &mut visited, &mut in_progress)?;
         Ok((layer, deps))
+    }
+
+    /// Resolve a layer with optional language routing.
+    ///
+    /// If `lang` is `Some(code)` and the resolved layer has a `family` field,
+    /// searches all search paths for a layer with the same `family` and
+    /// `language == code`. Returns that layer if found, otherwise falls back
+    /// to the originally resolved layer.
+    ///
+    /// If `lang` is `None` or the layer has no `family`, returns the layer as-is.
+    pub fn resolve_with_lang(&self, layer_ref: &LayerRef, lang: Option<&str>) -> Result<Layer> {
+        let layer = self.resolve(layer_ref)?;
+
+        let (lang_code, family) = match (lang, &layer.meta.family) {
+            (Some(l), Some(f)) => (l, f.clone()),
+            _ => return Ok(layer),
+        };
+
+        // Already the correct language
+        if layer.meta.language.as_deref() == Some(lang_code) {
+            return Ok(layer);
+        }
+
+        // Search all paths for a layer with matching family + language
+        let search_paths = self.search_paths();
+        for base_path in &search_paths {
+            if !base_path.exists() {
+                continue;
+            }
+            for entry in WalkDir::new(base_path).min_depth(1).max_depth(4) {
+                let entry = match entry {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                if entry.file_type().is_file() && entry.file_name() == "layer.yaml" {
+                    if let Some(layer_dir) = entry.path().parent() {
+                        if let Ok(candidate) = Layer::load_from_dir(layer_dir) {
+                            if candidate.meta.family.as_deref() == Some(&family)
+                                && candidate.meta.language.as_deref() == Some(lang_code)
+                            {
+                                return Ok(candidate);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: no matching variant found
+        eprintln!("warn: no {} variant found for family '{}', using original", lang_code, family);
+        Ok(layer)
     }
 
     /// Recursively collect all `requires` layers in dependency-first order.
@@ -433,6 +486,67 @@ models: []
     }
 
     #[test]
+    fn test_resolve_with_lang_returns_matching_variant() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create skill/pua/v1.0 with language=zh, family=pua
+        let pua_dir = tmp.path().join("skill").join("pua").join("v1.0");
+        fs::create_dir_all(&pua_dir).unwrap();
+        fs::write(pua_dir.join("layer.yaml"),
+            "name: pua\nnamespace: skill\nversion: v1.0\ndescription: \"\"\nauthor: \"\"\ntags: []\nsections: []\nconflicts: []\nrequires: []\nmodels: []\nlanguage: zh\nfamily: pua\n"
+        ).unwrap();
+        fs::write(pua_dir.join("prompt.md"), "").unwrap();
+
+        // Create skill/pua-en/v1.0 with language=en, family=pua
+        let pua_en_dir = tmp.path().join("skill").join("pua-en").join("v1.0");
+        fs::create_dir_all(&pua_en_dir).unwrap();
+        fs::write(pua_en_dir.join("layer.yaml"),
+            "name: pua-en\nnamespace: skill\nversion: v1.0\ndescription: \"\"\nauthor: \"\"\ntags: []\nsections: []\nconflicts: []\nrequires: []\nmodels: []\nlanguage: en\nfamily: pua\n"
+        ).unwrap();
+        fs::write(pua_en_dir.join("prompt.md"), "").unwrap();
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "skill/pua".to_string(), version: "v1.0".to_string() };
+
+        // --lang en: should return pua-en
+        let result = resolver.resolve_with_lang(&layer_ref, Some("en")).unwrap();
+        assert_eq!(result.meta.name, "pua-en",
+            "resolve_with_lang(en) should return the en variant");
+    }
+
+    #[test]
+    fn test_resolve_with_lang_fallback_when_no_variant() {
+        let tmp = TempDir::new().unwrap();
+
+        // Create skill/pua/v1.0 — no de variant exists
+        let pua_dir = tmp.path().join("skill").join("pua").join("v1.0");
+        fs::create_dir_all(&pua_dir).unwrap();
+        fs::write(pua_dir.join("layer.yaml"),
+            "name: pua\nnamespace: skill\nversion: v1.0\ndescription: \"\"\nauthor: \"\"\ntags: []\nsections: []\nconflicts: []\nrequires: []\nmodels: []\nlanguage: zh\nfamily: pua\n"
+        ).unwrap();
+        fs::write(pua_dir.join("prompt.md"), "").unwrap();
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "skill/pua".to_string(), version: "v1.0".to_string() };
+
+        // --lang de: no de variant → fallback to original
+        let result = resolver.resolve_with_lang(&layer_ref, Some("de")).unwrap();
+        assert_eq!(result.meta.name, "pua", "should fallback to original when no de variant");
+    }
+
+    #[test]
+    fn test_resolve_with_lang_none_returns_original() {
+        let tmp = TempDir::new().unwrap();
+        create_test_layer(tmp.path(), "pua", "skill", "v1.0");
+
+        let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
+        let layer_ref = LayerRef { source: "skill/pua".to_string(), version: "v1.0".to_string() };
+
+        let result = resolver.resolve_with_lang(&layer_ref, None).unwrap();
+        assert_eq!(result.meta.name, "pua");
+    }
+
+    #[test]
     fn test_resolve_with_requires_loads_base_layers() {
         let tmp = TempDir::new().unwrap();
 
@@ -451,7 +565,7 @@ models: []
         let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
         let layer_ref = LayerRef { source: "pua/zh".to_string(), version: "v1.0".to_string() };
 
-        let (layer, deps) = resolver.resolve_with_requires(&layer_ref).unwrap();
+        let (layer, deps) = resolver.resolve_with_requires(&layer_ref, None).unwrap();
         assert_eq!(layer.meta.name, "zh");
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0].meta.name, "core");
@@ -481,7 +595,7 @@ models: []
 
         let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
         let layer_ref = LayerRef { source: "t/a".to_string(), version: "v1.0".to_string() };
-        let (_, deps) = resolver.resolve_with_requires(&layer_ref).unwrap();
+        let (_, deps) = resolver.resolve_with_requires(&layer_ref, None).unwrap();
 
         let names: Vec<&str> = deps.iter().map(|l| l.meta.name.as_str()).collect();
         assert_eq!(names.iter().filter(|&&n| n == "d").count(), 1, "d should appear once: {:?}", names);
@@ -509,7 +623,7 @@ models: []
 
         let resolver = LayerResolver::new(vec![tmp.path().to_path_buf()]);
         let layer_ref = LayerRef { source: "cycle/a".to_string(), version: "v1.0".to_string() };
-        let result = resolver.resolve_with_requires(&layer_ref);
+        let result = resolver.resolve_with_requires(&layer_ref, None);
         assert!(result.is_err(), "circular dependency should return an error");
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("ircular") || err_msg.contains("cycle") || err_msg.contains("cycle/a") || err_msg.contains("cycle/b"),
