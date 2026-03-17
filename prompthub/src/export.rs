@@ -697,6 +697,167 @@ fn run_refactor(layers_dir: &Path, skip_confirm: bool) -> anyhow::Result<()> {
     }
 
     println!("\n{} Refactor complete.", "✓".green());
+
+    // ── Phase 2: language variant detection ────────────────────────────────────
+    let skill_names: Vec<String> = skill_contents.iter().map(|s| s.name.clone()).collect();
+    let variant_groups = detect_language_variants(&skill_names);
+
+    if !variant_groups.is_empty() {
+        println!("\n⚡ 发现 {} 个多语言变体组：\n", variant_groups.len());
+        for (i, group) in variant_groups.iter().enumerate() {
+            let members_display: Vec<String> = group
+                .members
+                .iter()
+                .map(|(name, lang)| format!("{} ({})", name, lang))
+                .collect();
+            println!(
+                "  {}. 家族 \"{}\"：{}",
+                i + 1,
+                group.family,
+                members_display.join(", ")
+            );
+            println!("     → 将在 layer.yaml 中标注 language 和 family 字段");
+        }
+
+        if !skip_confirm {
+            print!("\n继续？[Y/n] ");
+            use std::io::Write;
+            std::io::stdout().flush()?;
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input)?;
+            if input.trim().eq_ignore_ascii_case("n") {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+
+        annotate_variants(&variant_groups, layers_dir)?;
+    } else {
+        println!("✓ 未发现多语言变体组");
+    }
+
+    Ok(())
+}
+
+// ── language variant detection ────────────────────────────────────────────────
+
+const LANG_SUFFIXES: &[&str] = &[
+    "en", "zh", "ja", "ko", "fr", "de", "es", "pt", "ru", "ar",
+];
+
+#[derive(Debug)]
+struct VariantGroup {
+    family: String,
+    /// (skill_name, lang_code)
+    members: Vec<(String, String)>,
+}
+
+fn detect_language_variants(skill_names: &[String]) -> Vec<VariantGroup> {
+    use std::collections::HashMap;
+
+    let name_set: std::collections::HashSet<&str> =
+        skill_names.iter().map(|s| s.as_str()).collect();
+
+    // Step 1: collect suffixed members grouped by base/family
+    let mut families: HashMap<String, Vec<(String, String)>> = HashMap::new();
+    for name in skill_names {
+        if let Some((base, suffix)) = name.rsplit_once('-') {
+            if LANG_SUFFIXES.contains(&suffix) {
+                families
+                    .entry(base.to_string())
+                    .or_default()
+                    .push((name.clone(), suffix.to_string()));
+            }
+        }
+    }
+
+    // Step 2: for each family, optionally add the bare base skill
+    let mut groups: Vec<VariantGroup> = Vec::new();
+    for (family, mut members) in families {
+        if name_set.contains(family.as_str()) {
+            // base skill exists — add it with default lang "zh"
+            members.push((family.clone(), "zh".to_string()));
+        }
+        // discard groups with only 1 member
+        if members.len() >= 2 {
+            groups.push(VariantGroup { family, members });
+        }
+    }
+
+    // Sort for deterministic output
+    groups.sort_by(|a, b| a.family.cmp(&b.family));
+    groups
+}
+
+fn annotate_variants(
+    groups: &[VariantGroup],
+    layers_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    use prompthub::resolver::parse_semver;
+
+    for group in groups {
+        for (skill_name, lang) in &group.members {
+            let skill_dir = layers_dir.join("skill").join(skill_name);
+            if !skill_dir.exists() {
+                eprintln!("warn: skill/{} not found in layers dir, skipping", skill_name);
+                continue;
+            }
+
+            // Find latest version directory using semver ordering
+            let version_dir = {
+                let mut versions: Vec<std::path::PathBuf> = std::fs::read_dir(&skill_dir)?
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+                    .map(|e| e.path())
+                    .collect();
+
+                versions.sort_by(|a, b| {
+                    let na = a.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    let nb = b.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    match (parse_semver(na), parse_semver(nb)) {
+                        (Some(va), Some(vb)) => va.cmp(&vb),
+                        _ => na.cmp(nb),
+                    }
+                });
+
+                versions.into_iter().last()
+            };
+
+            let version_dir = match version_dir {
+                Some(d) => d,
+                None => {
+                    eprintln!("warn: skill/{} has no version dirs, skipping", skill_name);
+                    continue;
+                }
+            };
+
+            let yaml_path = version_dir.join("layer.yaml");
+            let yaml_str = std::fs::read_to_string(&yaml_path)
+                .with_context(|| format!("Cannot read {}", yaml_path.display()))?;
+            let mut meta: prompthub::layer::LayerMeta = serde_yaml::from_str(&yaml_str)
+                .with_context(|| format!("Cannot parse {}", yaml_path.display()))?;
+
+            meta.language = Some(lang.clone());
+            meta.family = Some(group.family.clone());
+
+            let new_yaml = serde_yaml::to_string(&meta)
+                .with_context(|| "Cannot serialize LayerMeta")?;
+            std::fs::write(&yaml_path, new_yaml)
+                .with_context(|| format!("Cannot write {}", yaml_path.display()))?;
+
+            let version_name = version_dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
+            println!(
+                "✓ Annotated skill/{}/{} [language={}, family={}]",
+                skill_name,
+                version_name,
+                lang,
+                group.family
+            );
+        }
+    }
     Ok(())
 }
 
@@ -781,6 +942,49 @@ Rewrite the following text.
         let meta: LayerMeta = serde_yaml::from_str(&yaml_content).unwrap();
         assert!(meta.sections.contains(&"role".to_string()));
         assert!(meta.sections.contains(&"constraints".to_string()));
+    }
+
+    #[test]
+    fn test_detect_variants_finds_pua_group() {
+        let names: Vec<String> = vec![
+            "pua".into(), "pua-en".into(), "pua-ja".into(),
+            "cpu-expert".into(), "sched-reviewer".into(),
+        ];
+        let groups = detect_language_variants(&names);
+        assert_eq!(groups.len(), 1, "only one variant group expected");
+        assert_eq!(groups[0].family, "pua");
+        let member_langs: Vec<&str> = groups[0].members.iter()
+            .map(|(_, lang)| lang.as_str()).collect();
+        assert!(member_langs.contains(&"en"));
+        assert!(member_langs.contains(&"ja"));
+        // "pua" base should be included (with default zh)
+        let base = groups[0].members.iter().find(|(name, _)| name == "pua");
+        assert!(base.is_some(), "base skill 'pua' should be in group");
+    }
+
+    #[test]
+    fn test_detect_variants_no_base_still_forms_group() {
+        // pua-en and pua-ja exist but no bare "pua" — still forms a group from suffixed members
+        let names: Vec<String> = vec!["pua-en".into(), "pua-ja".into()];
+        let groups = detect_language_variants(&names);
+        // group forms from suffixed members even without base
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].members.len(), 2);
+    }
+
+    #[test]
+    fn test_detect_variants_no_match() {
+        let names: Vec<String> = vec!["cpu-expert".into(), "sched-reviewer".into()];
+        let groups = detect_language_variants(&names);
+        assert!(groups.is_empty(), "no lang suffix matches expected");
+    }
+
+    #[test]
+    fn test_detect_variants_single_suffixed_no_base_discarded() {
+        // Only one suffixed member, no base → group has only 1 member → discarded
+        let names: Vec<String> = vec!["pua-en".into(), "cpu-expert".into()];
+        let groups = detect_language_variants(&names);
+        assert!(groups.is_empty(), "single-member groups should be discarded");
     }
 
     #[test]
