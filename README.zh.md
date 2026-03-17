@@ -265,7 +265,14 @@ ph push base/my-expert:v1.0        # 推送到 registry
 ph build                           # 构建并输出到标准输出
 ph build -o json                   # 结构化输出（prompt + 参数 + 摘要）
 ph build --var language=English    # 覆盖变量
+ph build --lang en                 # 路由到对应语言变体层（如 skill/pua-en）
 ph diff Promptfile Promptfile.prod # 对比两个 Promptfile
+
+# 导出本地 skill 为 layer
+ph export skills                   # 导出所有 ~/.claude/skills/ 到 ./layers/
+ph export skills humanizer         # 导出指定 skill
+ph export skills --refactor        # 导出 + 检测重复 chunk + 检测多语言变体
+ph export skills --refactor --yes  # 同上，跳过确认提示
 
 # 其他
 ph search translation              # 按关键词搜索层
@@ -285,6 +292,63 @@ sources:
     auth:
       token: phrt_xxxxxxxxxxxx
 ```
+
+## 导出本地 Skill
+
+`ph export skills` 将 Claude Code 的 skill 文件（`~/.claude/skills/*/SKILL.md`）转换为 PromptHub layer 格式，可直接用 `ph push` 推送到 registry。
+
+```bash
+$ ph export skills
+✓ Exported humanizer     → layers/skill/humanizer/v1.0/
+✓ Exported pua           → layers/skill/pua/v1.0/
+✓ Exported pua-en        → layers/skill/pua-en/v1.0/
+✓ Exported pua-ja        → layers/skill/pua-ja/v1.0/
+  23 skill(s) exported to layers/
+```
+
+skill 的 YAML frontmatter 映射为 `layer.yaml`，正文内容保存为 `prompt.md`。
+
+### `--refactor`：重复检测 + 多语言变体标注
+
+```bash
+$ ph export skills --refactor --yes
+...
+✓ No common chunks found -- nothing to refactor.
+
+⚡ 发现 1 个多语言变体组：
+
+  1. 家族 "pua"：pua-ja (ja), pua-en (en), pua (zh)
+     → 将在 layer.yaml 中标注 language 和 family 字段
+✓ Annotated skill/pua-ja/v1.0 [language=ja, family=pua]
+✓ Annotated skill/pua-en/v1.0 [language=en, family=pua]
+✓ Annotated skill/pua/v1.0   [language=zh, family=pua]
+```
+
+**Phase 1**（Jaccard 相似度）检测同语言 skill 之间的重复 chunk，建议抽取为共享 core layer。
+
+**Phase 2** 通过命名约定（`{base}-{lang}`，如 `pua-en`、`pua-ja`）识别多语言变体组，自动在各自的 `layer.yaml` 中写入 `language` / `family` 元数据——零存储开销，纯追加元数据。
+
+### 用 `--lang` 路由语言变体
+
+标注完成后，`ph build --lang en` 会在解析每个 layer 时自动切换到对应语言变体，找不到时优雅降级：
+
+```bash
+ph build Promptfile --lang en    # skill/pua → 自动路由到 skill/pua-en
+ph build Promptfile --lang ja    # skill/pua → 自动路由到 skill/pua-ja
+ph build Promptfile              # skill/pua 原样解析（默认语言）
+```
+
+### 存储占用
+
+导出 23 个 skill（包含 `~/.agents/skills/` 下的 symlink skill）：
+
+| | 原始 (`~/.claude/skills/`) | 导出后 (`layers/`) |
+|--|--|--|
+| 总大小 | ~701 KB + 链接目录 ~16 MB | **528 KB** |
+| 每个 skill 额外开销 | — | ~900 B（`layer.yaml` 元数据） |
+| `language`/`family` 标注 | — | 每个变体 `layer.yaml` 多两行 |
+
+prompt 内容**不重复存储**——导出的 `prompt.md` 大小与原始 `SKILL.md` 正文完全一致。
 
 ## 私有 Registry
 

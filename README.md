@@ -265,7 +265,14 @@ ph push base/my-expert:v1.0        # Push to registry
 ph build                           # Build to stdout
 ph build -o json                   # Structured output (prompt + params + digest)
 ph build --var language=English    # Override a variable
+ph build --lang en                 # Route to language variant layers (e.g. skill/pua-en)
 ph diff Promptfile Promptfile.prod # Compare two Promptfiles
+
+# Export local skills as layers
+ph export skills                   # Export all ~/.claude/skills/ as layers to ./layers/
+ph export skills humanizer         # Export a specific skill
+ph export skills --refactor        # Export + detect duplicate chunks + detect language variants
+ph export skills --refactor --yes  # Same, skip confirmation prompts
 
 # Other
 ph search translation              # Search layers by keyword
@@ -285,6 +292,63 @@ sources:
     auth:
       token: phrt_xxxxxxxxxxxx
 ```
+
+## Exporting Local Skills
+
+`ph export skills` converts Claude Code skill files (`~/.claude/skills/*/SKILL.md`) into PromptHub layers, ready to `ph push` to a registry.
+
+```bash
+$ ph export skills
+✓ Exported humanizer     → layers/skill/humanizer/v1.0/
+✓ Exported pua           → layers/skill/pua/v1.0/
+✓ Exported pua-en        → layers/skill/pua-en/v1.0/
+✓ Exported pua-ja        → layers/skill/pua-ja/v1.0/
+  23 skill(s) exported to layers/
+```
+
+Each skill's YAML frontmatter maps to `layer.yaml`; the body becomes `prompt.md`.
+
+### `--refactor`: duplicate detection + language variant annotation
+
+```bash
+$ ph export skills --refactor --yes
+...
+✓ No common chunks found -- nothing to refactor.
+
+⚡ 发现 1 个多语言变体组：
+
+  1. 家族 "pua"：pua-ja (ja), pua-en (en), pua (zh)
+     → 将在 layer.yaml 中标注 language 和 family 字段
+✓ Annotated skill/pua-ja/v1.0 [language=ja, family=pua]
+✓ Annotated skill/pua-en/v1.0 [language=en, family=pua]
+✓ Annotated skill/pua/v1.0   [language=zh, family=pua]
+```
+
+**Phase 1** (Jaccard similarity) finds same-language chunks duplicated across skills and suggests extracting them into a shared core layer.
+
+**Phase 2** detects multilingual variant groups by naming convention (`{base}-{lang}`, e.g. `pua-en`, `pua-ja`) and writes `language` / `family` metadata to each `layer.yaml` — zero storage overhead, purely additive.
+
+### Language routing with `--lang`
+
+After annotation, `ph build --lang en` automatically routes every layer resolution to its `en` variant when one exists, falling back gracefully if not:
+
+```bash
+ph build Promptfile --lang en    # resolves skill/pua → skill/pua-en
+ph build Promptfile --lang ja    # resolves skill/pua → skill/pua-ja
+ph build Promptfile              # resolves skill/pua as-is (default language)
+```
+
+### Storage footprint
+
+Exporting 23 skills (including symlinked skills from `~/.agents/skills/`):
+
+| | Source (`~/.claude/skills/`) | Exported (`layers/`) |
+|--|--|--|
+| Total size | ~701 KB + ~16 MB in linked dirs | **528 KB** |
+| Per skill overhead | — | ~900 B (`layer.yaml` metadata only) |
+| `language`/`family` annotation | — | 2 extra lines in `layer.yaml` per variant |
+
+Prompt content is **not duplicated** — the exported `prompt.md` is identical in size to the original `SKILL.md` body.
 
 ## Private Registry
 
