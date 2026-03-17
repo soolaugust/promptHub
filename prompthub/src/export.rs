@@ -479,7 +479,8 @@ fn load_skill_contents() -> anyhow::Result<Vec<prompthub::similarity::SkillConte
         .with_context(|| format!("Cannot read skills directory: {}", skills_dir.display()))?
     {
         let entry = entry?;
-        if !entry.file_type()?.is_dir() {
+        // Use fs::metadata (follows symlinks) instead of entry.file_type() (does not follow symlinks)
+        if !std::fs::metadata(entry.path()).map(|m| m.is_dir()).unwrap_or(false) {
             continue;
         }
         let skill_name = entry.file_name().to_string_lossy().to_string();
@@ -563,9 +564,7 @@ fn run_refactor(layers_dir: &Path, skip_confirm: bool) -> anyhow::Result<()> {
     let suggestions = find_common_chunks(&skill_contents, 0.85);
     if suggestions.is_empty() {
         println!("{} No common chunks found -- nothing to refactor.", "✓".green());
-        return Ok(());
-    }
-
+    } else {
     let plans = generate_split_plan(&suggestions);
 
     // Print preview of what will be created
@@ -697,6 +696,7 @@ fn run_refactor(layers_dir: &Path, skip_confirm: bool) -> anyhow::Result<()> {
     }
 
     println!("\n{} Refactor complete.", "✓".green());
+    } // end else (suggestions non-empty)
 
     // ── Phase 2: language variant detection ────────────────────────────────────
     let skill_names: Vec<String> = skill_contents.iter().map(|s| s.name.clone()).collect();
