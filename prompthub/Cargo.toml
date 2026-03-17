@@ -1,6 +1,6 @@
 [package]
 name = "prompthub"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "A layered prompt management system inspired by Docker"
 license = "MIT"
