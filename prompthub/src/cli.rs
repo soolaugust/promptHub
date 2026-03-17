@@ -104,6 +104,12 @@ pub enum Commands {
         /// Skip similarity analysis after export (default: auto-analyze on full export)
         #[arg(long, default_value_t = false)]
         no_analyze: bool,
+        /// Automatically split common chunks into core layers based on similarity analysis
+        #[arg(long, default_value_t = false)]
+        refactor: bool,
+        /// Skip confirmation prompt when used with --refactor
+        #[arg(long, default_value_t = false)]
+        yes: bool,
     },
 }
 

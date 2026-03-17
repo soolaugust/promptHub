@@ -249,6 +249,35 @@ pub fn infer_namespace(names: &[String]) -> String {
     "common".to_string()
 }
 
+/// Build prompt.md content for a core layer from common chunks.
+/// Each chunk becomes a [section-name] block.
+pub fn extract_core_content(chunks: &[&CommonChunkSuggestion]) -> String {
+    let mut parts = Vec::new();
+    for chunk in chunks {
+        let section = heading_to_section_name(&chunk.heading);
+        parts.push(format!("[{}]\n{}", section, chunk.representative_body.trim()));
+    }
+    parts.join("\n\n")
+}
+
+/// Convert a heading string to a section name (lowercase kebab-case for ASCII,
+/// sha256-based for non-ASCII like Chinese).
+pub fn heading_to_section_name(heading: &str) -> String {
+    if heading.is_ascii() {
+        heading
+            .to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join("-")
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-')
+            .collect()
+    } else {
+        let hash = Sha256::digest(heading.as_bytes());
+        format!("section-{}", hex::encode(&hash[..3]))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +399,30 @@ mod tests {
     fn test_infer_namespace_no_common_prefix() {
         let names = vec!["sched-reviewer".into(), "cpu-expert".into()];
         assert_eq!(infer_namespace(&names), "common");
+    }
+
+    #[test]
+    fn test_extract_core_content_formats_sections() {
+        let chunk = CommonChunkSuggestion {
+            heading: "Rules".into(),
+            representative_body: "Rule one.\nRule two.".into(),
+            skill_names: vec!["a".into(), "b".into()],
+            avg_similarity: 1.0,
+        };
+        let content = extract_core_content(&[&chunk]);
+        assert!(content.contains("[rules]"), "should have section marker");
+        assert!(content.contains("Rule one."), "should have body content");
+    }
+
+    #[test]
+    fn test_heading_to_section_name_ascii() {
+        assert_eq!(heading_to_section_name("Three Iron Rules"), "three-iron-rules");
+    }
+
+    #[test]
+    fn test_heading_to_section_name_non_ascii() {
+        let name = heading_to_section_name("三条铁律");
+        assert!(name.starts_with("section-"), "non-ASCII should use hash prefix");
+        assert_eq!(name.len(), "section-".len() + 6); // 3 bytes = 6 hex chars
     }
 }

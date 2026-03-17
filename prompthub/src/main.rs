@@ -37,8 +37,8 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Login { registry_url, token } => cmd_login(&registry_url, token.as_deref()),
         Commands::Logout { registry_url } => cmd_logout(&registry_url),
         Commands::Push { layer, source } => cmd_push(&layer, source.as_deref()),
-        Commands::Export { source, name, output, no_analyze } => {
-            export::cmd_export(&source, name.as_deref(), &output, no_analyze)
+        Commands::Export { source, name, output, no_analyze, refactor, yes } => {
+            export::cmd_export(&source, name.as_deref(), &output, no_analyze, refactor, yes)
         }
     }
 }

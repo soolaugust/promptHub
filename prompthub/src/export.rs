@@ -10,14 +10,19 @@ pub fn cmd_export(
     name: Option<&str>,
     output: &str,
     no_analyze: bool,
+    refactor: bool,
+    yes: bool,
 ) -> anyhow::Result<()> {
     let output_path = Path::new(output);
     match source {
         crate::cli::ExportSource::Skills => {
             export_skills(name, output_path)?;
-            if !no_analyze && name.is_none() {
-                // Full export: auto-run similarity analysis
-                run_similarity_analysis(output_path)?;
+            if name.is_none() {
+                if refactor {
+                    run_refactor(output_path, yes)?;
+                } else if !no_analyze {
+                    run_similarity_analysis(output_path)?;
+                }
             }
             Ok(())
         }
@@ -433,18 +438,40 @@ fn git_user_name() -> Option<String> {
 
 // ── similarity analysis ───────────────────────────────────────────────────────
 
-fn run_similarity_analysis(_layers_dir: &Path) -> anyhow::Result<()> {
-    use prompthub::similarity::{find_common_chunks, generate_split_plan, split_into_chunks, SkillContent};
-
-    // Analyse the *original* SKILL.md files (which use ## headings) rather than
-    // the exported prompt.md (which wraps content in [section] markers).
-    // This ensures split_into_chunks can segment content meaningfully.
-    let skills_dir = skills_base_dir();
-    if !skills_dir.exists() {
-        return Ok(());
+fn collapse_blank_lines(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut prev_blank = false;
+    for line in s.lines() {
+        let is_blank = line.trim().is_empty();
+        if is_blank && prev_blank {
+            continue;
+        }
+        result.push_str(line);
+        result.push('\n');
+        prev_blank = is_blank;
     }
+    result
+}
 
+fn strip_frontmatter(content: &str) -> String {
+    if content.trim_start().starts_with("---") {
+        let after_first = content.trim_start().trim_start_matches("---");
+        if let Some(end) = after_first.find("\n---") {
+            return after_first[end + 4..].trim_start().to_string();
+        }
+    }
+    content.to_string()
+}
+
+fn load_skill_contents() -> anyhow::Result<Vec<prompthub::similarity::SkillContent>> {
+    use prompthub::similarity::{split_into_chunks, SkillContent};
+
+    let skills_dir = skills_base_dir();
     let mut skill_contents: Vec<SkillContent> = Vec::new();
+
+    if !skills_dir.exists() {
+        return Ok(skill_contents);
+    }
 
     for entry in std::fs::read_dir(&skills_dir)
         .with_context(|| format!("Cannot read skills directory: {}", skills_dir.display()))?
@@ -459,26 +486,21 @@ fn run_similarity_analysis(_layers_dir: &Path) -> anyhow::Result<()> {
         if skill_md_path.exists() {
             let content = std::fs::read_to_string(&skill_md_path)
                 .with_context(|| format!("Cannot read {}", skill_md_path.display()))?;
-            // Parse frontmatter away — body starts after second '---'
-            let body = if content.trim_start().starts_with("---") {
-                let after_first = content.trim_start().trim_start_matches("---");
-                if let Some(end) = after_first.find("\n---") {
-                    after_first[end + 4..].trim_start().to_string()
-                } else {
-                    content.clone()
-                }
-            } else {
-                content.clone()
-            };
+            let body = strip_frontmatter(&content);
             let chunks = split_into_chunks(&body);
             if !chunks.is_empty() {
-                skill_contents.push(SkillContent {
-                    name: skill_name,
-                    chunks,
-                });
+                skill_contents.push(SkillContent { name: skill_name, chunks });
             }
         }
     }
+
+    Ok(skill_contents)
+}
+
+fn run_similarity_analysis(_layers_dir: &Path) -> anyhow::Result<()> {
+    use prompthub::similarity::{find_common_chunks, generate_split_plan};
+
+    let skill_contents = load_skill_contents()?;
 
     if skill_contents.len() < 2 {
         return Ok(());
@@ -519,8 +541,158 @@ fn run_similarity_analysis(_layers_dir: &Path) -> anyhow::Result<()> {
         "\n  运行 {} 自动生成层结构",
         "ph export skills --refactor".cyan()
     );
-    // Note: --refactor flag will be added in Task 0.5
 
+    Ok(())
+}
+
+fn run_refactor(layers_dir: &Path, skip_confirm: bool) -> anyhow::Result<()> {
+    use prompthub::similarity::{extract_core_content, find_common_chunks, generate_split_plan};
+
+    let skill_contents = load_skill_contents()?;
+    if skill_contents.is_empty() {
+        anyhow::bail!("No skills found in {}", skills_base_dir().display());
+    }
+
+    if skill_contents.len() < 2 {
+        println!("Not enough skills to analyze (need >= 2).");
+        return Ok(());
+    }
+
+    let suggestions = find_common_chunks(&skill_contents, 0.85);
+    if suggestions.is_empty() {
+        println!("{} No common chunks found -- nothing to refactor.", "✓".green());
+        return Ok(());
+    }
+
+    let plans = generate_split_plan(&suggestions);
+
+    // Print preview of what will be created
+    println!("\n{} Refactor plan:\n", "⚡".yellow());
+    for (i, plan) in plans.iter().enumerate() {
+        println!(
+            "  {}. Create {} from {} skills ({})",
+            i + 1,
+            plan.suggested_core_name.cyan(),
+            plan.affected_skills.len(),
+            plan.affected_skills.join(", ").dimmed(),
+        );
+        for chunk in &plan.common_chunks {
+            println!("     + extract \"{}\"", chunk.heading);
+        }
+    }
+
+    // Confirm if needed
+    if !skip_confirm {
+        print!("\nProceed? [y/N] ");
+        use std::io::Write;
+        std::io::stdout().flush()?;
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    // Execute each plan
+    for plan in &plans {
+        // Build core layer content
+        let chunk_refs: Vec<&prompthub::similarity::CommonChunkSuggestion> =
+            plan.common_chunks.iter().collect();
+        let core_content = extract_core_content(&chunk_refs);
+
+        // Determine core layer sections
+        let core_sections: Vec<String> = plan
+            .common_chunks
+            .iter()
+            .map(|c| prompthub::similarity::heading_to_section_name(&c.heading))
+            .collect();
+
+        // Write core layer
+        let core_parts: Vec<&str> = plan.suggested_core_name.splitn(2, '/').collect();
+        let (core_ns, core_name) = if core_parts.len() == 2 {
+            (core_parts[0], core_parts[1])
+        } else {
+            ("common", plan.suggested_core_name.as_str())
+        };
+
+        let core_meta = prompthub::layer::LayerMeta {
+            name: core_name.to_string(),
+            namespace: core_ns.to_string(),
+            version: "v1.0".to_string(),
+            description: format!(
+                "Shared core layer for: {}",
+                plan.affected_skills.join(", ")
+            ),
+            author: git_user_name().unwrap_or_default(),
+            tags: Vec::new(),
+            sections: core_sections,
+            conflicts: Vec::new(),
+            requires: Vec::new(),
+            models: Vec::new(),
+        };
+        let core_dir = layers_dir.join(core_ns).join(core_name).join("v1.0");
+        write_layer(&core_meta, &core_content, &core_dir)?;
+        println!("{} Created {}/", "✓".green(), core_dir.display());
+
+        // For each affected skill: add requires, remove common chunk sections from prompt.md
+        let requires_ref = format!("{}/{}:v1.0", core_ns, core_name);
+        let common_headings: std::collections::HashSet<&str> =
+            plan.common_chunks.iter().map(|c| c.heading.as_str()).collect();
+
+        for skill_name in &plan.affected_skills {
+            let skill_layer_dir = layers_dir.join("skill").join(skill_name).join("v1.0");
+            if !skill_layer_dir.exists() {
+                continue;
+            }
+
+            // Update layer.yaml: add requires
+            let yaml_path = skill_layer_dir.join("layer.yaml");
+            if yaml_path.exists() {
+                // Backup
+                std::fs::copy(&yaml_path, yaml_path.with_extension("yaml.bak"))?;
+
+                let yaml_str = std::fs::read_to_string(&yaml_path)?;
+                let mut meta: prompthub::layer::LayerMeta = serde_yaml::from_str(&yaml_str)
+                    .with_context(|| format!("Cannot parse {}", yaml_path.display()))?;
+                if !meta.requires.contains(&requires_ref) {
+                    meta.requires.push(requires_ref.clone());
+                }
+                let new_yaml = serde_yaml::to_string(&meta)?;
+                std::fs::write(&yaml_path, new_yaml)?;
+            }
+
+            // Update prompt.md: remove common chunk body text.
+            // The exported prompt.md uses [section] format, not ## headings, so we
+            // cannot use split_into_chunks here. Instead, remove the representative
+            // body of each common chunk by direct text substitution.
+            let prompt_path = skill_layer_dir.join("prompt.md");
+            if prompt_path.exists() {
+                // Backup
+                std::fs::copy(&prompt_path, prompt_path.with_extension("md.bak"))?;
+
+                let mut prompt_str = std::fs::read_to_string(&prompt_path)?;
+                for chunk in &plan.common_chunks {
+                    let body_trimmed = chunk.representative_body.trim();
+                    if !body_trimmed.is_empty() {
+                        prompt_str = prompt_str.replace(body_trimmed, "");
+                    }
+                }
+                // Collapse runs of blank lines left by removal
+                let new_prompt = collapse_blank_lines(&prompt_str);
+                std::fs::write(&prompt_path, new_prompt)?;
+            }
+
+            println!(
+                "{} Updated skill/{}/v1.0 (requires: {})",
+                "✓".green(),
+                skill_name,
+                requires_ref
+            );
+        }
+    }
+
+    println!("\n{} Refactor complete.", "✓".green());
     Ok(())
 }
 
