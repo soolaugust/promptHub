@@ -36,25 +36,13 @@ jobs:
           echo "New version: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-          # 写回 prompthub/Cargo.toml
+          # 只更新 prompthub/Cargo.toml 版本，暂不修改 registry（避免发布前依赖检查失败）
           sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" prompthub/Cargo.toml
-
-          # 写回 registry/Cargo.toml (version 字段)
-          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" registry/Cargo.toml
-
-          # 替换 registry 中的 path 依赖为版本依赖（兼容行内有额外字段的格式）
-          sed -i 's|prompthub = { path = "\.\./prompthub"[^}]* }|prompthub = "'"$NEW_VERSION"'"|' registry/Cargo.toml
 
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Commit version bump
-        run: |
-          git add prompthub/Cargo.toml registry/Cargo.toml
-          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
-          git push origin HEAD:master
 
       - name: Publish prompthub
         run: cargo publish -p prompthub --allow-dirty
@@ -64,16 +52,33 @@ jobs:
       - name: Wait for crates.io indexing
         run: sleep 60
 
-      - name: Publish ph-registry
-        run: cargo publish -p ph-registry --allow-dirty
+      - name: Update registry Cargo.toml and publish ph-registry
+        run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+          CURRENT=$(grep '^version' registry/Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+
+          # 更新 registry 版本号
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" registry/Cargo.toml
+
+          # 替换 path 依赖为版本依赖
+          sed -i 's|prompthub = { path = "\.\./prompthub"[^}]* }|prompthub = "'"$NEW_VERSION"'"|' registry/Cargo.toml
+
+          cargo publish -p ph-registry --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-      - name: Restore path dependency and push
+      - name: Commit version bumps and restore path dependency
         run: |
+          NEW_VERSION="${{ steps.bump.outputs.new_version }}"
+
+          # 提交 prompthub 版本 bump
+          git add prompthub/Cargo.toml
+
+          # 还原 registry path 依赖，提交 registry 版本 bump
           sed -i 's|prompthub = "[^"]*"|prompthub = { path = "../prompthub", default-features = false }|' registry/Cargo.toml
           git add registry/Cargo.toml
-          git commit -m "chore: restore path dependency after release"
+
+          git commit -m "chore: bump version to $NEW_VERSION"
           git push origin HEAD:master
 
       - name: Create GitHub Release
