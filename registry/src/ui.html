@@ -22,6 +22,7 @@
     --ns-style: #cba6f7;
     --ns-guard: #f38ba8;
     --ns-lang: #89b4fa;
+    --ns-skill: #94e2d5;
   }
 
   body {
@@ -284,6 +285,7 @@
   .ns-badge[data-ns="style"] { background: rgba(203,166,247,0.15); color: var(--ns-style); border: 1px solid rgba(203,166,247,0.3); }
   .ns-badge[data-ns="guard"] { background: rgba(243,139,168,0.15); color: var(--ns-guard); border: 1px solid rgba(243,139,168,0.3); }
   .ns-badge[data-ns="lang"]  { background: rgba(137,180,250,0.15); color: var(--ns-lang); border: 1px solid rgba(137,180,250,0.3); }
+  .ns-badge[data-ns="skill"] { background: rgba(148,226,213,0.15); color: var(--ns-skill); border: 1px solid rgba(148,226,213,0.3); }
   .ns-badge[data-ns="other"] { background: rgba(242,139,52,0.15); color: var(--accent); border: 1px solid rgba(242,139,52,0.3); }
 
   .layer-card .layer-name {
@@ -812,7 +814,7 @@
   }
 
   function getNsKey(ns) {
-    const known = ['base', 'style', 'guard', 'lang'];
+    const known = ['base', 'style', 'guard', 'lang', 'skill'];
     return known.includes(ns) ? ns : 'other';
   }
 
@@ -821,6 +823,11 @@
     return `<span class="ns-badge" data-ns="${key}">${esc(ns)}</span>`;
   }
 
+  // Layer data stores — populated by render functions so click handlers can
+  // look up the full object without embedding JSON in HTML attributes.
+  let _recentData = [];
+  let _gridData = [];
+
   function renderRecent(layers) {
     const el = document.getElementById('recent-list');
     if (!layers.length) {
@@ -828,10 +835,11 @@
       return;
     }
     const recent = layers.slice(0, 8);
-    el.innerHTML = recent.map(l => {
+    _recentData = recent;
+    el.innerHTML = recent.map((l, i) => {
       const nsKey = getNsKey(l.namespace);
       return `
-      <div class="recent-item" onclick="openDetail('${esc(l.namespace)}', '${esc(l.name)}', ${JSON.stringify(l.versions)}, '${esc(l.latest)}', ${JSON.stringify(l)})">
+      <div class="recent-item" data-src="recent" data-idx="${i}">
         <div>
           <div class="item-name">${esc(l.name)}</div>
           <div class="item-ns" style="color: var(--ns-${nsKey === 'other' ? 'base' : nsKey})">${esc(l.namespace)}</div>
@@ -840,6 +848,12 @@
       </div>
     `;
     }).join('');
+    el.querySelectorAll('.recent-item').forEach(card => {
+      card.addEventListener('click', () => {
+        const l = _recentData[+card.dataset.idx];
+        openDetail(l.namespace, l.name, l.versions, l.latest, l);
+      });
+    });
   }
 
   function renderLayerGrid(layers) {
@@ -848,12 +862,13 @@
       el.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>No layers found.</p></div>';
       return;
     }
-    el.innerHTML = layers.map(l => {
+    _gridData = layers;
+    el.innerHTML = layers.map((l, i) => {
       const desc = l.description ? `<div class="layer-desc">${esc(l.description)}</div>` : '';
       const tags = (l.tags && l.tags.length) ?
         `<div class="layer-tags">${l.tags.slice(0, 3).map(t => `<span class="tag-chip">${esc(t)}</span>`).join('')}</div>` : '';
       return `
-      <div class="layer-card" onclick="openDetail('${esc(l.namespace)}', '${esc(l.name)}', ${JSON.stringify(l.versions)}, '${esc(l.latest)}', ${JSON.stringify(l)})">
+      <div class="layer-card" data-idx="${i}">
         <div class="card-top">
           ${nsBadgeHtml(l.namespace)}
         </div>
@@ -867,6 +882,12 @@
       </div>
     `;
     }).join('');
+    el.querySelectorAll('.layer-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const l = _gridData[+card.dataset.idx];
+        openDetail(l.namespace, l.name, l.versions, l.latest, l);
+      });
+    });
   }
 
   // ── Search ──────────────────────────────────────────────────────────────────
@@ -904,11 +925,13 @@
     const tabsEl = document.getElementById('version-tabs');
     tabsEl.innerHTML = `<span class="tab-label">Versions:</span>` +
       versions.map(v => `
-        <button class="ver-btn ${v === activeVer ? 'active' : ''}"
-                onclick="switchVersion('${esc(ns)}', '${esc(name)}', ${JSON.stringify(versions)}, '${esc(v)}', ${JSON.stringify(layerData)})">
+        <button class="ver-btn ${v === activeVer ? 'active' : ''}" data-ver="${esc(v)}">
           ${esc(v)}
         </button>
       `).join('');
+    tabsEl.querySelectorAll('.ver-btn').forEach(btn => {
+      btn.addEventListener('click', () => switchVersion(ns, name, versions, btn.dataset.ver, layerData));
+    });
 
     document.getElementById('detail-yaml').textContent = 'Loading…';
     document.getElementById('detail-prompt').textContent = 'Loading…';

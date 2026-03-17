@@ -1,4 +1,5 @@
 mod cli;
+mod export;
 
 use prompthub::{config, layer, merger, output, parser, pull, push, renderer, resolver};
 use anyhow::Context;
@@ -36,6 +37,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Login { registry_url, token } => cmd_login(&registry_url, token.as_deref()),
         Commands::Logout { registry_url } => cmd_logout(&registry_url),
         Commands::Push { layer, source } => cmd_push(&layer, source.as_deref()),
+        Commands::Export { source, name, output } => {
+            export::cmd_export(&source, name.as_deref(), &output)
+        }
     }
 }
 

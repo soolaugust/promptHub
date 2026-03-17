@@ -91,6 +91,25 @@ pub enum Commands {
         #[arg(long)]
         source: Option<String>,
     },
+
+    /// Export local Claude skills or existing layers as PromptHub layer format
+    Export {
+        /// What to export: "skills" (~/.claude/skills/) or "layers" (./layers/)
+        source: ExportSource,
+        /// Optional: specific name to export (e.g. "humanizer")
+        name: Option<String>,
+        /// Output directory (default: ./layers)
+        #[arg(long, default_value = "layers")]
+        output: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum ExportSource {
+    /// Export Claude Code skills from ~/.claude/skills/
+    Skills,
+    /// Standardize / fix existing layers in ./layers/
+    Layers,
 }
 
 #[derive(Subcommand, Debug)]

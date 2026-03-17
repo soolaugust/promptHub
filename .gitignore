@@ -2,3 +2,5 @@
 .worktrees/
 .claude/
 docs/superpowers/
+/layers/
+/prompthub/layers/skill/
