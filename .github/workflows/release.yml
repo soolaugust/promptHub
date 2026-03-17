@@ -54,7 +54,7 @@ jobs:
         run: |
           git add prompthub/Cargo.toml registry/Cargo.toml
           git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
-          git push origin HEAD:main
+          git push origin HEAD:master
 
       - name: Publish prompthub
         run: cargo publish -p prompthub
@@ -74,7 +74,7 @@ jobs:
           sed -i 's|prompthub = ".*"|prompthub = { path = "../prompthub" }|' registry/Cargo.toml
           git add registry/Cargo.toml
           git commit -m "chore: restore path dependency after release"
-          git push origin HEAD:main
+          git push origin HEAD:master
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
