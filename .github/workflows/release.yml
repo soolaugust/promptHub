@@ -57,15 +57,15 @@ jobs:
           git push origin HEAD:master
 
       - name: Publish prompthub
-        run: cargo publish -p prompthub
+        run: cargo publish -p prompthub --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
       - name: Wait for crates.io indexing
-        run: sleep 30
+        run: sleep 60
 
       - name: Publish ph-registry
-        run: cargo publish -p ph-registry
+        run: cargo publish -p ph-registry --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
